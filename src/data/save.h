@@ -160,7 +160,13 @@ int citydata_load(const char *name, arena_citydata *out);
  *   +0x90F  actor table: 23 slots x 28 bytes (DGROUP:0AB3); slots 15-22 are
  *           the human opponents whose records are block 2
  *   +0xC04  u16 climate offset 0 / 4 / 8 (DGROUP:0DA8; picks the exterior .INF)
- *   +0xD48..+0xDA6  sound module state; +0xDCE..+0xDE0 quest state;
+ *   +0xD48..+0xDA6  sound module state;
+ *   +0xDCE u16 (DGROUP:0F72) loaded as a pointer by 12 routines (0x0E45 and
+ *           0x0E6E in the saves);
+ *   +0xDD3 u8 (DGROUP:0F77) progress counter compared with 8 and 9 by the
+ *           palace and town-service code (likely the main-quest stage);
+ *   +0xDD2, +0xDD4..+0xDDB, +0xDDD..+0xDDF single-byte flags set to 0 or 1
+ *           by the quest code (meanings not mapped);
  *   +0xE39..+0xE4E  town-service / shop state (layouts not mapped)
  * Scramble (symmetric): with n = bytes remaining (block length down to 1),
  * byte ^= low byte of ror16(n, n & 15).
