@@ -163,10 +163,17 @@ int citydata_load(const char *name, arena_citydata *out);
  *   +0xD48..+0xDA6  sound module state;
  *   +0xDCE u16 (DGROUP:0F72) loaded as a pointer by 12 routines (0x0E45 and
  *           0x0E6E in the saves);
- *   +0xDD3 u8 (DGROUP:0F77) progress counter compared with 8 and 9 by the
- *           palace and town-service code (likely the main-quest stage);
- *   +0xDD2, +0xDD4..+0xDDB, +0xDDD..+0xDDF single-byte flags set to 0 or 1
- *           by the quest code (meanings not mapped);
+ *   +0xDD3 u8 (DGROUP:0F77) main-quest stage: 8 while the final quest is under
+ *           way (all staff pieces found), 9 once Jagar Tharn is defeated;
+ *           0 early in the game. Confirmed on two characters' saves from
+ *           UESP (Earendil slots 0-1 = 8, 2-9 = 9; Selene before / after the
+ *           palace = 8 / 9). The palace and town-service code compare it
+ *           with 8 and 9;
+ *   +0xDD2 u8 (0F76) 0/1 flag; 0 right after the final quest, 1 in most
+ *           other saves (likely "a quest is active");
+ *   +0xDD0 / +0xDD1 (0F74 / 0F75) set to 0x9E / 0x9F in one save inside an
+ *           artifact-quest dungeon, 0 otherwise;
+ *   +0xDD4..+0xDDB, +0xDDD..+0xDDF further 0/1 flags (meanings not mapped);
  *   +0xE39..+0xE4E  town-service / shop state (layouts not mapped)
  * Scramble (symmetric): with n = bytes remaining (block length down to 1),
  * byte ^= low byte of ror16(n, n & 15).

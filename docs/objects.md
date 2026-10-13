@@ -68,13 +68,15 @@ inventory, shop and item-name code (2194:7388-7438, 37ce:000c-0129):
 |---|---|---|
 | +0x00 | item kind; bit 7 selects a separate naming path, the low 7 bits index the kind's name lists | C (code) |
 | +0x01 | u16 count / durability: decremented when used (2194:78af) | C (code), L (meaning) |
-| +0x03..+0x0B | further values (in the saves: small numbers at +0x03, +0x05, +0x07, +0x09, larger ones at +0x04, +0x06, +0x08, +0x0A; +0x0C/+0x0D always 0) | ? |
+| +0x03..+0x0D | further values (small numbers at +0x03, +0x05, +0x07, +0x09, larger ones at +0x04, +0x06, +0x08, +0x0A; +0x0C/+0x0D are 0 in an early save but used by endgame items) | ? |
 | +0x0E | flags: bits 2-3 = item class 0-3 (the naming code branches on it, 2194:7394-73dd); bits 4-5 = one of four descriptor strings (pointer table DGROUP:5D7C); bit 1 changes the name (likely "identified"); bits 0, 6, 7 tested elsewhere (bit 7 24 times, bit 0 21, bit 6 16 in the code) | C (code), ? (names) |
 | +0x0F | name part index (0xFF = none) | C (code) |
 | +0x10 | second name part / handler index into the table at DGROUP:786A (0xFF = none) | C (code) |
 | +0x11 | small value (0..42 in the saves) | ? |
 | +0x12 | 0 or 0xFF in the saves | ? |
 
-Data: 21 items in the inventory of the slot-0 save; offsets +0x0C and +0x0D
-are 0 in all of them.
+Data: checked on 202 items from three characters (an early save and the
+endgame saves of two UESP characters, Earendil and Selene): inventories are
+always packed from the first slot; every class value 0-3 occurs; the
+descriptor bits take the values 0-2.
 

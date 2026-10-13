@@ -308,4 +308,8 @@
   confirmed by the spells bought in game); datatool validates every known spell against the spell tables.
 - 2026-10-13: SAVEENGN quest area outlined: pointer word, a progress counter compared with 8/9 (likely main
   quest stage), and 0/1 flags; meanings of the individual flags not mapped.
+- 2026-10-13: validated against endgame saves from UESP (Earendil: 10 slots, Selene: 2; kept locally in
+  run/downloads, not committed): main-quest stage DGROUP:0F77 = 8 during the final quest, 9 after it
+  (confirmed on both characters); 520 known-spell entries all valid; 320 custom spells consistent;
+  181 more items checked (correction: item bytes +0x0C/+0x0D are used).
 
