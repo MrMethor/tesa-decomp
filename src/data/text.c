@@ -193,3 +193,46 @@ int text_split_alternatives(char *text, char **parts, int max)
 	}
 	return n;
 }
+
+int quiz_load(const char *name, arena_quiz *out)
+{
+	uint32_t size, pos = 0;
+	uint8_t *buf = afile_load_all(name, &size);
+	int      expect = 1, answers = QUIZ_ANSWERS, ok = 1;
+
+	memset(out, 0, sizeof *out);
+	if (!buf)
+		return -1;
+	out->size = size;
+	while (pos < size) {
+		uint32_t start = pos, n = 0;
+		uint8_t  c = buf[pos];
+		while (pos < size && buf[pos] != '\n')
+			pos++;
+		pos++;   /* past '\n' */
+		if (c >= '0' && c <= '9') {
+			uint32_t i = start;
+			while (i < size && buf[i] >= '0' && buf[i] <= '9')
+				n = n * 10 + (buf[i++] - '0');
+			if (answers != QUIZ_ANSWERS || (int)n != expect || i >= size || buf[i] != '.' ||
+			    out->count == QUIZ_MAX) {
+				ok = 0;
+				break;
+			}
+			out->q[out->count++].question = start;
+			expect++;
+			answers = 0;
+		} else if (c >= 'a' && c <= 'c' && start + 1 < size && buf[start + 1] == ')') {
+			if (out->count == 0 || answers >= QUIZ_ANSWERS || c != 'a' + answers) {
+				ok = 0;
+				break;
+			}
+			out->q[out->count - 1].answer[answers++] = start;
+		}
+		/* anything else: continuation (indented) or empty line */
+	}
+	if (answers != QUIZ_ANSWERS)
+		ok = 0;
+	free(buf);
+	return ok ? 0 : -1;
+}

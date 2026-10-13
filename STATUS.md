@@ -17,11 +17,11 @@ as C. That is why "program logic rebuilt as C" stays at 0% by design.
 | Measure | Progress | Detail |
 |---|---|---|
 | Executable unpacked and disassembled | **100%** | ACD.EXE (PKLITE) unpacked; 2,492 functions, 200,039 bytes of code exported from Ghidra |
-| Game data with a working reader | **98.5%** of bytes, **99.3%** of files | 2,789 of 2,809 game files (51.4 of 52.2 MB) |
-| Game data partly decoded | 0.9% of bytes | 10 files: the two big save files, 5 encrypted help/menu texts, JAGTEMP.DAT |
-| Game data not decoded | 0.5% of bytes | 6 files: VISION.EMS cache, the 4 live wilderness copies, EXTRA |
-| Game data never used by the game | 0.1% of bytes | 4 files: RAND.DAT, GUARD.DAT, POPTALK.IMG, S2.IMG |
-| File formats fully understood | **33 of 40 (83%)** | 37 of 40 (93%) at least partly |
+| Game data with a working reader | **99.2%** of bytes, **99.6%** of files | 2,798 of 2,809 game files (51.8 of 52.2 MB) |
+| Game data partly decoded | 0.7% of bytes | 4 files: SAVEENGN and SAVEGAME of the two save slots in the game folder |
+| Game data not decoded | **0%** | every remaining file is either decoded, partly decoded or never used |
+| Game data never used by the game | 0.1% of bytes | 7 files: RAND.DAT, GUARD.DAT, POPTALK.IMG, S2.IMG, HELP.TXT, JAGTEMP.DAT, EXTRA |
+| File formats fully understood | **37 of 39 (95%)** | 39 of 39 (100%) at least partly |
 | Executable studied in depth | **9.0%** of functions, **18.7%** of code bytes | 224 functions cited in the hand-written analysis |
 | Behaviour facts written up in `docs/` | about 115 | about 85 confirmed by code or data, 17 likely, 11 open |
 | Verification checks | **27 of 27 pass** | `bsatool`, `imgtool`, `maptool`, `soundtool`, `datatool` |
@@ -60,14 +60,11 @@ What the percentages mean in practice:
 ### Partly done
 - **SAVEENGN block 1:** the sound, quest and shop areas are unmapped. Loot records: the item contents are unmapped.
 - **SAVEGAME state block:** the main fields are mapped; the rest is unlabelled.
-- **Encrypted text files** (HELP, QUESTION, SPELLMKR, DUNGEON, FOG): they decrypt, but their internal structure is not mapped. JAGTEMP.DAT is read as text only.
+- (The loose text files are now decoded: DUNGEON and SPELLMKR record files, the QUESTION questionnaire, the FOG grid; HELP, JAGTEMP and EXTRA are never used.)
 - Confirmed since the first version of this file: wall types A (edge), D (diagonal) and 9 (see-through), by a cross-check with OpenTESArena; all sprite flags, from the drawing code; the automap 4-cell mirroring on save/load, in game.
 
 ### Not done
-- **Not decoded:**
-  - the live wilderness copies WILD00x.64;
-  - VISION.EMS (a cache the game writes);
-  - EXTRA (4 bytes).
+- **Not decoded:** nothing; every original game file is decoded, partly decoded (the two big save files) or never used by the game.
 - **Large parts of the program not studied:** character creation, town services and shops, dialogue, combat, quests, the main quest (see the subsystem table below).
 - **Out of scope by agreement:** the game program rebuilt as C; an SDL2 platform layer (it could be built as your own engine on top of the data layer).
 
@@ -111,11 +108,13 @@ What the percentages mean in practice:
 | SAVEENGN.* | 2 | `saveengn_load`, `save_scramble`, `SE1_*` | `datatool verifytext` | partial |
 | SAVEGAME.* | 2 | `savegame_load`, `SG_*` | `datatool verifytext` | partial |
 | WILD00x.00 | 4 | same as `.RMD` | byte-identical to the `.RMD` files | done |
-| WILD00x.64 | 4 | — | — | not decoded |
-| Encrypted `.TXT` (HELP, QUESTION, SPELLMKR, DUNGEON, FOG) | 5 | decrypted by `fs/afile.c` | — | structure open |
-| JAGTEMP.DAT | 1 | read as text | — | partial |
+| WILD00x.64 | 4 | `rmd_load` (same format as `.RMD`) | `maptool verifyrmd WILD001.64 ...` | done |
+| DUNGEON.TXT, SPELLMKR.TXT, QUESTION.TXT (plain text) | 3 | `textdb_load` (`#` records), `quiz_load` | `datatool verifytext` | done |
+| FOG.TXT (binary 128x128 uint16 grid) | 1 | `fogmap_load` | `imgtool verifymisc` | done |
+| HELP.TXT | 1 | `textdb_load` | `datatool verifytext` | never used by the game |
+| JAGTEMP.DAT, EXTRA | 2 | — | — | never used by the game |
 | `.RCI` (WATERANI, LAVAANI; SPPARTS) | 3, 320 KB | `rci_load` (5 frames of 320x100); `tileset_load` (SPPARTS: 9 tiles of 3x3) | `imgtool verifymisc`, `verifypal` | done |
-| VISION.EMS, EXTRA | 2 | — | — | not decoded (cache / unknown) |
+| VISION.EMS | 1 | layout in `save.h` (game-written memory swap file) | — | done |
 | RAND.DAT, GUARD.DAT | 2 | — | never opened by the game | unused |
 | Sound drivers, banks, installer, launcher, manuals | 42 | — | — | not game data, out of scope |
 
@@ -217,9 +216,9 @@ module map, so treat the split as approximate.
 
 - **Game data:** every file in the game's `ARENA` folder plus every GLOBAL.BSA entry (the archive file itself is not double-counted). A file counts as "decoded" when a reader in `src/` decodes it and a check passes. Driver, installer and launcher files (42) are excluded as not game data.
 - **File formats:**
-  - 33 complete: archive, images, code-sized raw images, water/lava `.RCI` animations, image sets, texture sets, DFA, CFA, palettes, light tables, menus, fonts, FLIC, VOC, XMI, MIF, RMD, INF, text decryption, string lists, keyed texts, template index, classes, save names, name chunks, spells, STATES, AUTOMAP, CITYDATA, IN<n>, LOG, WILD .00, the executable's tables.
-  - 4 partial: SAVEENGN, SAVEGAME, encrypted text structure, JAGTEMP.
-  - 3 not decoded: VISION.EMS, EXTRA, WILD .64. (POPTALK.IMG, S2.IMG, RAND.DAT and GUARD.DAT are never used by the game and are not counted as formats.)
+  - 37 complete: archive, images, code-sized raw images, water/lava `.RCI` animations, image sets, texture sets, DFA, CFA, palettes, light tables, menus, fonts, FLIC, VOC, XMI, MIF, RMD (including the WILD save copies), INF, text decryption, string lists, keyed texts, template index, the dungeon/spellmaker record files, the questionnaire, the fog grid, classes, save names, name chunks, spells, STATES, AUTOMAP, CITYDATA, IN<n>, LOG, VISION.EMS, the executable's tables.
+  - 2 partial: SAVEENGN, SAVEGAME.
+  - 0 not decoded. (POPTALK.IMG, S2.IMG, RAND.DAT, GUARD.DAT, HELP.TXT, JAGTEMP.DAT and EXTRA are never used by the game and are not counted as formats.)
 - **Functions studied:** an original function counts when an address inside it is cited in the hand-written analysis (`docs/`, comments in `src/`, `PROGRESS.md`, `decomp/notes/*.md`). The generated listings are not counted. A citation means the function was read for a specific finding, not that all of it is understood.
 - **Behaviour facts:** confidence marks in the tables and paragraphs of `docs/` (C = confirmed, L = likely, ? = open).
 - **Checks:** every verification command of the five tools run against the original game files; all exit with success.

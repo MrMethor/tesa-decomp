@@ -296,4 +296,8 @@
   GLOBAL.BSA (no game table in the source). .RCI decoded: WATERANI/LAVAANI = 5 raw 320x100 frames (loader
   1000:dfdb, agrees with OpenTESArena), SPPARTS = 3x3 tile set (2194:5301). UPDOWN.IMG = raw 8x16 scroll
   arrows (2194:12f5 / 1000:5b04); POPTALK.IMG and S2.IMG never used. Data with a reader: 98.5% of bytes.
+- 2026-10-13: remaining files classified: FOG.TXT = binary 128x128 uint16 fog grid (3b39:17b8, fogmap_load);
+  QUESTION.TXT = 40 questions x a)/b)/c) (quiz_load); DUNGEON.TXT and SPELLMKR.TXT = '#' record files;
+  VISION.EMS = game-written swap file of texture pages 0-3; WILD00n.<slot> = .RMD format; HELP.TXT,
+  JAGTEMP.DAT and EXTRA never used. 99.2% of game data bytes decoded, the rest partial (2 save files) or unused.
 

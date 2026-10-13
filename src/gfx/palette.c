@@ -125,3 +125,19 @@ int lgt_load(const char *name, arena_lgt *out)
 	free(buf);
 	return 0;
 }
+
+int fogmap_load(const char *name, arena_fogmap *out)
+{
+	uint32_t len, i;
+	uint8_t *buf = afile_load_all(name, &len);
+	if (!buf)
+		return -1;
+	if (len != FOG_GRID * FOG_GRID * 2) {
+		free(buf);
+		return -1;
+	}
+	for (i = 0; i < FOG_GRID * FOG_GRID; i++)
+		out->v[i] = (uint16_t)(buf[2 * i] | (buf[2 * i + 1] << 8));
+	free(buf);
+	return 0;
+}

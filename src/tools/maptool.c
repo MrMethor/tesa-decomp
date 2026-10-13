@@ -189,7 +189,9 @@ static int verify_rmd(int nextra, char **extra)
 	long             types[16] = { 0 };
 	for (i = 0; i < bsa_count() + nextra; i++) {
 		const char *name = i < bsa_count() ? bsa_entry_at(i)->name : extra[i - bsa_count()];
-		if (!has_ext(name, "RMD"))
+		/* extra names are checked whatever their extension: the save-slot
+		 * copies WILD00n.<slot> use the same format */
+		if (i < bsa_count() && !has_ext(name, "RMD"))
 			continue;
 		if (i >= bsa_count() && bsa_find(name))
 			continue;

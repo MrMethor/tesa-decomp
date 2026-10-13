@@ -76,4 +76,16 @@ typedef struct arena_lgt {
 
 int lgt_load(const char *name, arena_lgt *out);
 
+/* FOG.TXT: despite the name, a binary 128x128 grid of uint16 values (32768
+ * bytes). The fog routine 3b39:17b8 reads it into EMS page 17 and samples it
+ * at world positions: index = ((z >> 6) & 0x7F) * 128 + ((x >> 6) & 0x7F),
+ * i.e. two grid cells per map cell and wrapping every 64 map cells; each
+ * frame it fills a 25-row table of samples for the fog drawing. */
+#define FOG_GRID 128
+typedef struct arena_fogmap {
+	uint16_t v[FOG_GRID * FOG_GRID];   /* row-major, v[row * 128 + column] */
+} arena_fogmap;
+
+int fogmap_load(const char *name, arena_fogmap *out);
+
 #endif

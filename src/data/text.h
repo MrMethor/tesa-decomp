@@ -11,6 +11,17 @@
  * lines up to the next header. For TEMPLATE.DAT the game builds an index of
  * keys -> file offsets, seeks to the record and reads up to the next '#'
  * (lookup at 2194:a3e3-a45c). Lines ending in '&' appear inside records.
+ *
+ * Loose text files (plain text, not encrypted):
+ *   DUNGEON.TXT  4 lines, then 8 records separated by identical '#' lines,
+ *                picked by position (loaded by 392b:03aa)
+ *   SPELLMKR.TXT 44 '#' records with %a %b %c %f substitutions: the
+ *                spellmaker's effect description templates (2194:6d97)
+ *   QUESTION.TXT the class questionnaire, see quiz_load below
+ *   HELP.TXT (24 '#' records), JAGTEMP.DAT (plain lines) and EXTRA (two
+ *                empty lines) are never used: their names do not occur in
+ *                ACD.EXE and the logged play sessions never open them.
+ *   FOG.TXT is binary, see fogmap_load in gfx/palette.h.
  */
 #ifndef ARENA_TEXT_H
 #define ARENA_TEXT_H
@@ -73,5 +84,28 @@ int      tpl_find(const arena_tplindex *ix, uint16_t key, int nth);
 
 /* Split text in place at '&' into up to max alternatives; returns how many. */
 int      text_split_alternatives(char *text, char **parts, int max);
+
+/* QUESTION.TXT, the class questionnaire (read whole by 322c:0185): entries
+ * "N." numbered 1..40 in order, each followed by exactly three answer lines
+ * starting "a)", "b)", "c)"; longer texts continue on lines indented with
+ * spaces. The answer letter is what the questionnaire counts (the a/b/c
+ * totals are looked up in CLASSES.DAT). The reader records where each part
+ * starts; the text stays in the game file. */
+#define QUIZ_MAX     64
+#define QUIZ_ANSWERS 3
+
+typedef struct quiz_entry {
+	uint32_t question;               /* file offset of the "N." line */
+	uint32_t answer[QUIZ_ANSWERS];   /* file offsets of the "a)", "b)", "c)" lines */
+} quiz_entry;
+
+typedef struct arena_quiz {
+	int        count;
+	quiz_entry q[QUIZ_MAX];
+	uint32_t   size;                 /* file size */
+} arena_quiz;
+
+/* Returns 0 when every entry is numbered in order and has its three answers. */
+int quiz_load(const char *name, arena_quiz *out);
 
 #endif

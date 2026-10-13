@@ -323,6 +323,22 @@ static int verify_misc(void)
 		}
 	}
 	{
+		static arena_fogmap fog;
+		if (fogmap_load("FOG.TXT", &fog) != 0) {
+			printf("  FOG.TXT      not a 128x128 uint16 grid\n");
+			bad++;
+		} else {
+			unsigned lo = 0xFFFF, hi = 0;
+			for (i = 0; i < FOG_GRID * FOG_GRID; i++) {
+				if (fog.v[i] < lo)
+					lo = fog.v[i];
+				if (fog.v[i] > hi)
+					hi = fog.v[i];
+			}
+			printf("  FOG.TXT      128x128 uint16 fog grid, values %u..%u\n", lo, hi);
+		}
+	}
+	{
 		static const char *const rcis[] = { "WATERANI.RCI", "LAVAANI.RCI" };
 		for (i = 0; i < 2; i++) {
 			arena_cif   anim;

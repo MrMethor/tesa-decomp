@@ -49,6 +49,7 @@ int main(int argc, char **argv)
 	                                     "ARTFACT1.DAT", "ARTFACT2.DAT" };
 	static const struct { const char *name; char marker; } dbs[] = {
 		{ "TEMPLATE.DAT", '#' }, { "CITYTXT", '#' }, { "CITYINTR", '[' }, { "JAGTEMP.DAT", '#' },
+		{ "DUNGEON.TXT", '#' },  { "HELP.TXT", '#' }, { "SPELLMKR.TXT", '#' },
 	};
 	static char codes[256][5];
 	int i, bad = 0;
@@ -99,11 +100,38 @@ int main(int argc, char **argv)
 		printf("  %-12s %d records ('%c' headers), %d body lines, %d duplicate keys, "
 		       "%d lines before the first header\n",
 		       dbs[i].name, db.count, dbs[i].marker, lines, dups, db.lines_before_first);
-		if (dbs[i].marker == '#' && db.count)
-			printf("    first/last keys: %s ... %s\n", db.records[0].key,
-			       db.records[db.count - 1].key);
+		if (dbs[i].marker == '#' && db.count) {
+			/* print keys only when they are codes (digits, optional letter);
+			 * word keys could be game text */
+			int numeric = 1;
+			for (k = 0; k < db.count && numeric; k++) {
+				const char *p = db.records[k].key;
+				if (!isdigit((unsigned char)*p))
+					numeric = 0;
+				while (isdigit((unsigned char)*p))
+					p++;
+				if (isalpha((unsigned char)*p))
+					p++;
+				if (*p && !isspace((unsigned char)*p))
+					numeric = 0;
+			}
+			if (numeric)
+				printf("    first/last keys: %s ... %s\n", db.records[0].key,
+				       db.records[db.count - 1].key);
+			else
+				printf("    keys are not numeric codes (not shown)\n");
+		}
 		print_codes(codes, ncodes);
 		textdb_free(&db);
+	}
+	{
+		static arena_quiz quiz;
+		if (quiz_load("QUESTION.TXT", &quiz) != 0) {
+			printf("  QUESTION.TXT entries not numbered in order or missing answers a), b), c)\n");
+			bad++;
+		} else
+			printf("  QUESTION.TXT %d questions numbered 1..%d, %d answers each\n", quiz.count, quiz.count,
+			       QUIZ_ANSWERS);
 	}
 	{
 		static arena_tplindex ix;

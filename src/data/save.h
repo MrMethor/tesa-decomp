@@ -32,6 +32,15 @@
  * it by writing 131136 bytes straight from the MAP1 segment (1000:356a-3585).
  *
  * LOG.<slot>: logbook text, appended as "&" + date + entry (37e3:000e).
+ *
+ * WILD00n.<slot> (n = 1..4): copies of the four wilderness blocks the player
+ * has changed, in the .RMD format (rmd_load reads them; checked with
+ * maptool verifyrmd WILD001.64 ...).
+ *
+ * VISION.EMS (262142 bytes): a swap file the game writes itself, not shipped
+ * data: uint16 current EMS page (DGROUP:8FA8), then texture-memory pages 0-3,
+ * 65535 bytes each, saved by 3f75:000a and restored by 3f75:014e around the
+ * CD speech / vision sequence (flag DGROUP:8F4E).
  */
 #ifndef ARENA_SAVE_H
 #define ARENA_SAVE_H
