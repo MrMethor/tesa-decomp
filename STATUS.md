@@ -22,7 +22,7 @@ as C. That is why "program logic rebuilt as C" stays at 0% by design.
 | Game data not decoded | **0%** | every remaining file is either decoded, partly decoded or never used |
 | Game data never used by the game | 0.1% of bytes | 7 files: RAND.DAT, GUARD.DAT, POPTALK.IMG, S2.IMG, HELP.TXT, JAGTEMP.DAT, EXTRA |
 | File formats fully understood | **37 of 39 (95%)** | 39 of 39 (100%) at least partly |
-| Executable studied in depth | **9.0%** of functions, **18.7%** of code bytes | 224 functions cited in the hand-written analysis |
+| Executable studied in depth | **9.8%** of functions, **20.3%** of code bytes | 244 functions cited in the hand-written analysis |
 | Behaviour facts written up in `docs/` | about 115 | about 85 confirmed by code or data, 17 likely, 11 open |
 | Verification checks | **27 of 27 pass** | `bsatool`, `imgtool`, `maptool`, `soundtool`, `datatool` |
 | Program logic rebuilt as C | 0% | out of scope by agreement (documented in `docs/` instead) |
