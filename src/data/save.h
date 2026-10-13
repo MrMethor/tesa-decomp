@@ -182,6 +182,16 @@ int citydata_load(const char *name, arena_citydata *out);
  *   +0x5D uint16   fatigue, stored x64 (shown >> 6); the maximum shown is
  *                  computed from strength + endurance
  *   +0x66 uint16   spell points, current +0x68 uint16 spell points, maximum
+ *   +0x6E          inventory: 40 items of 19 bytes (docs/objects.md)
+ *   +0x366 uint8   number of known spells
+ *   +0x367 uint8[] known spells: 0-127 = record of the general spell table
+ *                  (SPELLSG.<slot>), 128+ = record (value - 128) of the
+ *                  player's own book (SPELLS.<slot>). Confirmed in game:
+ *                  buying two spells added 128 and 129 after the two
+ *                  existing entries; the spellbook removes an entry by
+ *                  shifting the rest down (2194:5337-5360)
+ *   +0x407 uint16  set to a random 1..51 or 0 by a class-group chance
+ *                  (34fa:004d)
  *   +0x409 uint32  experience
  *   +0x41E uint32  gold (the game reads it as the global DGROUP:05C2)
  * Labels matched against CHARSTAT.IMG at the positions the values are drawn. 
@@ -198,6 +208,11 @@ int citydata_load(const char *name, arena_citydata *out);
 #define PLAYER_FATIGUE_OFF  0x5D
 #define PLAYER_SP_OFF       0x66
 #define PLAYER_SPMAX_OFF    0x68
+#define PLAYER_INV_OFF      0x6E
+#define PLAYER_INV_ITEMS    40
+#define PLAYER_ITEM_SIZE    19
+#define PLAYER_NSPELLS_OFF  0x366
+#define PLAYER_SPELLS_OFF   0x367
 #define PLAYER_EXP_OFF      0x409
 #define PLAYER_GOLD_OFF     0x41E
 

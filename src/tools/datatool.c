@@ -366,6 +366,29 @@ int main(int argc, char **argv)
 				       (unsigned long)(t % 1440 / 60), (unsigned long)(t % 60), b[SE1_PROVINCE], clim,
 				       b[SE1_AUTOMAP_NEXT], ok ? "consistent" : "INCONSISTENT");
 				bad += !ok;
+				{
+					/* known spells: < 128 -> SPELLSG record, >= 128 -> SPELLS book record */
+					arena_spelltable gen, book;
+					char             gname[16], bname[16];
+					int              n = b[PLAYER_NSPELLS_OFF], valid = 0, have;
+					snprintf(gname, sizeof gname, "SPELLSG.%s", slots[k]);
+					snprintf(bname, sizeof bname, "SPELLS.%s", slots[k]);
+					have = spelltable_load(gname, SPELLS_GENERAL, &gen) == 0;
+					have &= spelltable_load(bname, SPELLS_PLAYER, &book) == 0;
+					for (j = 0; have && j < n; j++) {
+						int            id = b[PLAYER_SPELLS_OFF + j];
+						const uint8_t *rec = id < 128 ? spelltable_record(&gen, id)
+						                              : spelltable_record(&book, id - 128);
+						valid += rec && spell_listed(rec);
+					}
+					printf("               %d known spells, %d point to a defined spell record\n", n,
+					       valid);
+					bad += have && valid != n;
+					if (have) {
+						spelltable_free(&gen);
+						spelltable_free(&book);
+					}
+				}
 			}
 			snprintf(name, sizeof name, "SAVEGAME.%s", slots[k]);
 			if (savegame_load(name, &sg) != 0) {

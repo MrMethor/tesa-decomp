@@ -304,4 +304,6 @@
   marker, free flag, 19-byte item block); item block fields still open.
 - 2026-10-13: item record (19 bytes) and inventory (40 items at player record +0x6E) mapped from the inventory,
   shop and item-name code; kind, count, flags (class bits 2-3, descriptor bits 4-5), two name indexes.
+- 2026-10-13: player record +0x366 known-spell count, +0x367 spell ids (<128 general table, >=128 own book;
+  confirmed by the spells bought in game); datatool validates every known spell against the spell tables.
 
