@@ -302,4 +302,6 @@
   JAGTEMP.DAT and EXTRA never used. 99.2% of game data bytes decoded, the rest partial (2 save files) or unused.
 - 2026-10-13: loot record fields mapped (contents flag, kind with handler tables DGROUP:4D1A/4D22/4D2C, value,
   marker, free flag, 19-byte item block); item block fields still open.
+- 2026-10-13: item record (19 bytes) and inventory (40 items at player record +0x6E) mapped from the inventory,
+  shop and item-name code; kind, count, flags (class bits 2-3, descriptor bits 4-5), two name indexes.
 

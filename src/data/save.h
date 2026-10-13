@@ -147,7 +147,8 @@ int citydata_load(const char *name, arena_citydata *out);
  * The player record itself is 0x41E bytes: DGROUP:01A4 + 0x41E = 05C2, the
  * gold variable, which block 1 also covers. Block 1 is DGROUP:01A4..0FF2;
  * offsets into it (SE1_*), checked on the saves by datatool:
- *   +0x000  player record (0x41E bytes, fields below)
+ *   +0x000  player record (0x41E bytes, fields below; inventory = 40 items
+ *           of 19 bytes at record +0x6E, see docs/objects.md)
  *   +0x41E  u16 gold (DGROUP:05C2)
  *   +0x424  u16 / +0x426 u16  game flag words (DGROUP:05C8 / 05CA, 100+ uses)
  *   +0x428  u32 game time in minutes since the start; day = t / 1440, time of
