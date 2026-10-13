@@ -1,0 +1,10 @@
+address,name
+1000:a26f,world_loop
+1000:d4b4,render_d4b4
+1000:d78c,render_inner_d78c
+1000:6f06,video_init_and_bsa_open
+1000:582c,img_draw
+1000:7608,lzss_decode
+4065:0d2d,lzhuf_decode
+4065:0a26,lzhuf_encode
+1000:742c,file_load

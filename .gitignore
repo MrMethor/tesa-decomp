@@ -1,0 +1,16 @@
+# Game-derived material stays local and is never committed:
+# the (unpacked) executable, the game copy and extracted archive, build output,
+# the Ghidra project and its raw disassembly / decompilation exports.
+bin/
+run/
+build/
+ghidra_project/
+decomp/raw/
+decomp/far_targets.txt
+decomp/notes/*.asm
+decomp/notes/*.txt
+
+# Python caches and generated DOSBox-X configs
+__pycache__/
+*.pyc
+*.conf

@@ -1,0 +1,377 @@
+/* Decompressors used by Arena's data files. See compress.h. */
+#include "compress.h"
+
+#include <string.h>
+
+/* ---- LZSS (1000:7608) ------------------------------------------------- */
+
+#define LZSS_N 4096
+#define LZSS_F 18
+
+size_t lzss_decode(const uint8_t *in, size_t in_len, uint8_t *out, size_t out_cap)
+{
+	uint8_t  ring[LZSS_N];
+	size_t   ip = 0, op = 0;
+	unsigned r = LZSS_N - LZSS_F;   /* 0xFEE */
+	unsigned flags = 0;
+
+	memset(ring, ' ', LZSS_N - LZSS_F);
+	memset(ring + LZSS_N - LZSS_F, 0, LZSS_F);   /* the original leaves these unset */
+
+	for (;;) {
+		flags >>= 1;
+		if (!(flags & 0x100)) {
+			if (ip >= in_len)
+				break;
+			flags = in[ip++] | 0xFF00;
+		}
+		if (flags & 1) {
+			uint8_t c;
+			if (ip >= in_len)
+				break;
+			c = in[ip++];
+			if (op < out_cap)
+				out[op] = c;
+			op++;
+			ring[r] = c;
+			r = (r + 1) & (LZSS_N - 1);
+		} else {
+			unsigned pos, len, k;
+			if (ip + 1 >= in_len)
+				break;   /* the original also stops when a pair is cut short */
+			pos = in[ip] | ((in[ip + 1] & 0xF0u) << 4);
+			len = (in[ip + 1] & 0x0Fu) + 2;
+			ip += 2;
+			for (k = 0; k <= len; k++) {
+				uint8_t c = ring[(pos + k) & (LZSS_N - 1)];
+				if (op < out_cap)
+					out[op] = c;
+				op++;
+				ring[r] = c;
+				r = (r + 1) & (LZSS_N - 1);
+			}
+		}
+	}
+	return op < out_cap ? op : out_cap;
+}
+
+/* ---- LZHUF (4065:0d2d and helpers) -------------------------------------- */
+
+#define LZH_N         4096
+#define LZH_F         60
+#define LZH_THRESHOLD 2
+#define LZH_N_CHAR    (256 - LZH_THRESHOLD + LZH_F)   /* 314 */
+#define LZH_T         (LZH_N_CHAR * 2 - 1)            /* 627 */
+#define LZH_R         (LZH_T - 1)
+#define LZH_MAX_FREQ  0x8000
+
+/* Upper 6 bits of the match position: code and bit length per leading byte. */
+static const uint8_t d_code[256] = {
+	0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+	0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+	0x01,0x01,0x01,0x01,0x01,0x01,0x01,0x01,0x01,0x01,0x01,0x01,0x01,0x01,0x01,0x01,
+	0x02,0x02,0x02,0x02,0x02,0x02,0x02,0x02,0x02,0x02,0x02,0x02,0x02,0x02,0x02,0x02,
+	0x03,0x03,0x03,0x03,0x03,0x03,0x03,0x03,0x03,0x03,0x03,0x03,0x03,0x03,0x03,0x03,
+	0x04,0x04,0x04,0x04,0x04,0x04,0x04,0x04,0x05,0x05,0x05,0x05,0x05,0x05,0x05,0x05,
+	0x06,0x06,0x06,0x06,0x06,0x06,0x06,0x06,0x07,0x07,0x07,0x07,0x07,0x07,0x07,0x07,
+	0x08,0x08,0x08,0x08,0x08,0x08,0x08,0x08,0x09,0x09,0x09,0x09,0x09,0x09,0x09,0x09,
+	0x0A,0x0A,0x0A,0x0A,0x0A,0x0A,0x0A,0x0A,0x0B,0x0B,0x0B,0x0B,0x0B,0x0B,0x0B,0x0B,
+	0x0C,0x0C,0x0C,0x0C,0x0D,0x0D,0x0D,0x0D,0x0E,0x0E,0x0E,0x0E,0x0F,0x0F,0x0F,0x0F,
+	0x10,0x10,0x10,0x10,0x11,0x11,0x11,0x11,0x12,0x12,0x12,0x12,0x13,0x13,0x13,0x13,
+	0x14,0x14,0x14,0x14,0x15,0x15,0x15,0x15,0x16,0x16,0x16,0x16,0x17,0x17,0x17,0x17,
+	0x18,0x18,0x19,0x19,0x1A,0x1A,0x1B,0x1B,0x1C,0x1C,0x1D,0x1D,0x1E,0x1E,0x1F,0x1F,
+	0x20,0x20,0x21,0x21,0x22,0x22,0x23,0x23,0x24,0x24,0x25,0x25,0x26,0x26,0x27,0x27,
+	0x28,0x28,0x29,0x29,0x2A,0x2A,0x2B,0x2B,0x2C,0x2C,0x2D,0x2D,0x2E,0x2E,0x2F,0x2F,
+	0x30,0x31,0x32,0x33,0x34,0x35,0x36,0x37,0x38,0x39,0x3A,0x3B,0x3C,0x3D,0x3E,0x3F,
+};
+static const uint8_t d_len[256] = {
+	0x03,0x03,0x03,0x03,0x03,0x03,0x03,0x03,0x03,0x03,0x03,0x03,0x03,0x03,0x03,0x03,
+	0x03,0x03,0x03,0x03,0x03,0x03,0x03,0x03,0x03,0x03,0x03,0x03,0x03,0x03,0x03,0x03,
+	0x04,0x04,0x04,0x04,0x04,0x04,0x04,0x04,0x04,0x04,0x04,0x04,0x04,0x04,0x04,0x04,
+	0x04,0x04,0x04,0x04,0x04,0x04,0x04,0x04,0x04,0x04,0x04,0x04,0x04,0x04,0x04,0x04,
+	0x04,0x04,0x04,0x04,0x04,0x04,0x04,0x04,0x04,0x04,0x04,0x04,0x04,0x04,0x04,0x04,
+	0x05,0x05,0x05,0x05,0x05,0x05,0x05,0x05,0x05,0x05,0x05,0x05,0x05,0x05,0x05,0x05,
+	0x05,0x05,0x05,0x05,0x05,0x05,0x05,0x05,0x05,0x05,0x05,0x05,0x05,0x05,0x05,0x05,
+	0x05,0x05,0x05,0x05,0x05,0x05,0x05,0x05,0x05,0x05,0x05,0x05,0x05,0x05,0x05,0x05,
+	0x05,0x05,0x05,0x05,0x05,0x05,0x05,0x05,0x05,0x05,0x05,0x05,0x05,0x05,0x05,0x05,
+	0x06,0x06,0x06,0x06,0x06,0x06,0x06,0x06,0x06,0x06,0x06,0x06,0x06,0x06,0x06,0x06,
+	0x06,0x06,0x06,0x06,0x06,0x06,0x06,0x06,0x06,0x06,0x06,0x06,0x06,0x06,0x06,0x06,
+	0x06,0x06,0x06,0x06,0x06,0x06,0x06,0x06,0x06,0x06,0x06,0x06,0x06,0x06,0x06,0x06,
+	0x07,0x07,0x07,0x07,0x07,0x07,0x07,0x07,0x07,0x07,0x07,0x07,0x07,0x07,0x07,0x07,
+	0x07,0x07,0x07,0x07,0x07,0x07,0x07,0x07,0x07,0x07,0x07,0x07,0x07,0x07,0x07,0x07,
+	0x07,0x07,0x07,0x07,0x07,0x07,0x07,0x07,0x07,0x07,0x07,0x07,0x07,0x07,0x07,0x07,
+	0x08,0x08,0x08,0x08,0x08,0x08,0x08,0x08,0x08,0x08,0x08,0x08,0x08,0x08,0x08,0x08,
+};
+
+typedef struct lzhuf {
+	const uint8_t *in;
+	size_t         in_len, ip;
+	uint16_t       getbuf;     /* DGROUP:B540 */
+	uint8_t        getlen;     /* DGROUP:B53E */
+	uint16_t       freq[LZH_T + 1];
+	int16_t        prnt[LZH_T + LZH_N_CHAR];
+	int16_t        son[LZH_T];
+	uint8_t        text_buf[LZH_N + LZH_F - 1];
+} lzhuf;
+
+/* 4065:001c: next input byte, -1 at the end (treated as 0 by the bit reader). */
+static int lzh_getc(lzhuf *z) { return z->ip < z->in_len ? z->in[z->ip++] : -1; }
+
+static void lzh_fill(lzhuf *z)
+{
+	while (z->getlen <= 8) {
+		int c = lzh_getc(z);
+		if (c < 0)
+			c = 0;
+		z->getbuf |= (uint16_t)(c << (8 - z->getlen));
+		z->getlen += 8;
+	}
+}
+
+static int lzh_getbit(lzhuf *z)          /* 4065:0455 */
+{
+	uint16_t i;
+	lzh_fill(z);
+	i = z->getbuf;
+	z->getbuf <<= 1;
+	z->getlen--;
+	return (i >> 15) & 1;
+}
+
+static int lzh_getbyte(lzhuf *z)
+{
+	uint16_t i;
+	lzh_fill(z);
+	i = z->getbuf;
+	z->getbuf <<= 8;
+	z->getlen -= 8;
+	return i >> 8;
+}
+
+static void lzh_start(lzhuf *z)
+{
+	int i, j;
+	for (i = 0; i < LZH_N_CHAR; i++) {
+		z->freq[i] = 1;
+		z->son[i] = (int16_t)(i + LZH_T);
+		z->prnt[i + LZH_T] = (int16_t)i;
+	}
+	i = 0;
+	for (j = LZH_N_CHAR; j <= LZH_R; j++, i += 2) {
+		z->freq[j] = (uint16_t)(z->freq[i] + z->freq[i + 1]);
+		z->son[j] = (int16_t)i;
+		z->prnt[i] = z->prnt[i + 1] = (int16_t)j;
+	}
+	z->freq[LZH_T] = 0xFFFF;
+	z->prnt[LZH_R] = 0;
+}
+
+/* Rebuild the tree when the root frequency reaches MAX_FREQ. */
+static void lzh_reconst(lzhuf *z)
+{
+	int i, j, k;
+	unsigned f, l;
+
+	for (i = 0, j = 0; i < LZH_T; i++) {
+		if (z->son[i] >= LZH_T) {
+			z->freq[j] = (uint16_t)((z->freq[i] + 1) / 2);
+			z->son[j] = z->son[i];
+			j++;
+		}
+	}
+	for (i = 0, j = LZH_N_CHAR; j < LZH_T; i += 2, j++) {
+		k = i + 1;
+		f = z->freq[j] = (uint16_t)(z->freq[i] + z->freq[k]);
+		for (k = j - 1; f < z->freq[k]; k--)
+			;
+		k++;
+		l = (unsigned)(j - k);
+		memmove(&z->freq[k + 1], &z->freq[k], l * sizeof z->freq[0]);
+		z->freq[k] = (uint16_t)f;
+		memmove(&z->son[k + 1], &z->son[k], l * sizeof z->son[0]);
+		z->son[k] = (int16_t)i;
+	}
+	for (i = 0; i < LZH_T; i++) {
+		k = z->son[i];
+		z->prnt[k] = (int16_t)i;
+		if (k < LZH_T)
+			z->prnt[k + 1] = (int16_t)i;
+	}
+}
+
+static void lzh_update(lzhuf *z, int c)
+{
+	int i, j, l;
+	unsigned k;
+
+	if (z->freq[LZH_R] == LZH_MAX_FREQ)
+		lzh_reconst(z);
+	c = z->prnt[c + LZH_T];
+	do {
+		k = ++z->freq[c];
+		l = c + 1;
+		if (k > z->freq[l]) {
+			while (k > z->freq[++l])
+				;
+			l--;
+			z->freq[c] = z->freq[l];
+			z->freq[l] = (uint16_t)k;
+
+			i = z->son[c];
+			z->prnt[i] = (int16_t)l;
+			if (i < LZH_T)
+				z->prnt[i + 1] = (int16_t)l;
+
+			j = z->son[l];
+			z->son[l] = (int16_t)i;
+
+			z->prnt[j] = (int16_t)c;
+			if (j < LZH_T)
+				z->prnt[j + 1] = (int16_t)c;
+			z->son[c] = (int16_t)j;
+
+			c = l;
+		}
+	} while ((c = z->prnt[c]) != 0);
+}
+
+static int lzh_decode_char(lzhuf *z)     /* 4065:0ff1 */
+{
+	int c = z->son[LZH_R];
+	while (c < LZH_T)
+		c = z->son[c + lzh_getbit(z)];
+	c -= LZH_T;
+	lzh_update(z, c);
+	return c;
+}
+
+static int lzh_decode_position(lzhuf *z) /* 4065:1028 */
+{
+	int i = lzh_getbyte(z), j;
+	int c = d_code[i] << 6;
+	for (j = d_len[i] - 2; j > 0; j--)
+		i = (i << 1) + lzh_getbit(z);
+	return c | (i & 0x3F);
+}
+
+size_t lzhuf_decode(const uint8_t *in, size_t in_len, uint8_t *out, size_t out_cap)
+{
+	static lzhuf z;   /* ~9 KB; the original allocates its tables per call */
+	uint32_t size, count = 0;
+	unsigned r;
+
+	if (in_len < 2)
+		return 0;
+	size = (uint32_t)(in[0] | (in[1] << 8));
+	if (size == 0)
+		return 0;
+	memset(&z, 0, sizeof z);
+	z.in = in + 2;
+	z.in_len = in_len - 2;
+
+	lzh_start(&z);
+	memset(z.text_buf, ' ', LZH_N - LZH_F);
+	r = LZH_N - LZH_F;
+	while (count < size) {
+		int c = lzh_decode_char(&z);
+		if (c < 256) {
+			if (count < out_cap)
+				out[count] = (uint8_t)c;
+			count++;
+			z.text_buf[r] = (uint8_t)c;
+			r = (r + 1) & (LZH_N - 1);
+		} else {
+			int i = (int)((r - (unsigned)lzh_decode_position(&z) - 1) & (LZH_N - 1));
+			int j = c - 255 + LZH_THRESHOLD, k;
+			for (k = 0; k < j; k++) {
+				uint8_t b = z.text_buf[(i + k) & (LZH_N - 1)];
+				if (count < out_cap)
+					out[count] = b;
+				count++;
+				z.text_buf[r] = b;
+				r = (r + 1) & (LZH_N - 1);
+			}
+		}
+	}
+	return count < out_cap ? count : out_cap;
+}
+
+/* ---- word-controlled RLE (3294:0cbd / 3294:0cde) ------------------------ */
+
+static int16_t rds16(const uint8_t *p) { return (int16_t)(p[0] | (p[1] << 8)); }
+
+size_t rle16_decode(const uint8_t *in, size_t in_len, uint16_t *out, size_t out_cap,
+                    size_t *consumed)
+{
+	size_t ip = 2, op = 0, total;
+
+	if (in_len < 2)
+		return 0;
+	total = (size_t)(in[0] | (in[1] << 8));
+	if (total > out_cap)
+		return 0;
+	while (op < total) {
+		int c;
+		if (ip + 2 > in_len)
+			return 0;
+		c = rds16(in + ip);
+		ip += 2;
+		if (c < 0) {
+			size_t   n = (size_t)(-c);
+			uint16_t v;
+			if (ip + 2 > in_len || op + n > total)
+				return 0;
+			v = (uint16_t)(in[ip] | (in[ip + 1] << 8));
+			ip += 2;
+			while (n--)
+				out[op++] = v;
+		} else {
+			size_t n = (size_t)c;
+			if (ip + 2 * n > in_len || op + n > total)
+				return 0;
+			while (n--) {
+				out[op++] = (uint16_t)(in[ip] | (in[ip + 1] << 8));
+				ip += 2;
+			}
+		}
+	}
+	if (consumed)
+		*consumed = ip;
+	return op;
+}
+
+size_t rle8w_decode(const uint8_t *in, size_t in_len, uint8_t *out, size_t out_cap,
+                    size_t *consumed)
+{
+	size_t ip = 2, op = 0, total;
+
+	if (in_len < 2)
+		return 0;
+	total = (size_t)(in[0] | (in[1] << 8));
+	if (total > out_cap)
+		return 0;
+	while (op < total) {
+		int c;
+		if (ip + 2 > in_len)
+			return 0;
+		c = rds16(in + ip);
+		ip += 2;
+		if (c < 0) {
+			size_t n = (size_t)(-c);
+			if (ip + 1 > in_len || op + n > total)
+				return 0;
+			memset(out + op, in[ip++], n);
+			op += n;
+		} else {
+			size_t n = (size_t)c;
+			if (ip + n > in_len || op + n > total)
+				return 0;
+			memcpy(out + op, in + ip, n);
+			ip += n;
+			op += n;
+		}
+	}
+	if (consumed)
+		*consumed = ip;
+	return op;
+}
