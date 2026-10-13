@@ -300,4 +300,6 @@
   QUESTION.TXT = 40 questions x a)/b)/c) (quiz_load); DUNGEON.TXT and SPELLMKR.TXT = '#' record files;
   VISION.EMS = game-written swap file of texture pages 0-3; WILD00n.<slot> = .RMD format; HELP.TXT,
   JAGTEMP.DAT and EXTRA never used. 99.2% of game data bytes decoded, the rest partial (2 save files) or unused.
+- 2026-10-13: loot record fields mapped (contents flag, kind with handler tables DGROUP:4D1A/4D22/4D2C, value,
+  marker, free flag, 19-byte item block); item block fields still open.
 

@@ -135,7 +135,10 @@ int citydata_load(const char *name, arena_citydata *out);
  *   0x15E0 (5600) bytes  from EMS page 6, offset 0xA000: 200 loot records of
  *                        28 bytes (3433:0802 scans 0xC8 x 0x1C); +0x02 u16 cell
  *                        offset, +0x04 u8 level index (matched against
- *                        DGROUP:12C0 / BB0A); the rest holds the items
+ *                        DGROUP:12C0 / BB0A); +0x00 has-contents flag, +0x01
+ *                        pile kind, +0x05 u16 value (0xFFFF once taken),
+ *                        +0x07 marker, +0x08 free flag, +0x09 19-byte item
+ *                        block (see docs/objects.md)
  *   0x0120  (288) bytes  from the far pointer in DGROUP:1020: the player's
  *                        effects record, selected for the player record by
  *                        3cdd:09e0 (humans use other storage); e.g. +0x22 sets

@@ -43,10 +43,14 @@ cell carrying the creature marker (bit 9) comes into view (hook slot CD56 ->
 
 | Offset | Meaning | Conf. |
 |---|---|---|
+| +0x00 | u8 1 = the pile has contents (3433:0086) | C (code) |
+| +0x01 | u8 pile kind: picks the handlers from the jump tables at DGROUP:4D1A, 4D22 and 4D2C (3433:00a6, 035f, 0379) | C (code), ? (kind values) |
 | +0x02 | u16 cell offset of the pile | C |
 | +0x04 | u8 level index (matched against DGROUP:BB0A) | C |
+| +0x05 | u16 value returned by the kind's handler (e.g. an amount); 0xFFFF once taken (3433:0368, 03b6) | C (code), L (meaning) |
+| +0x07 | u8 marker, set to 0xFF when the value is taken (3433:0363, 03b1) | C (code) |
 | +0x08 | u8 1 = free record, 0 = in use: dropping something takes the first free record, clears the flag and fills the record from the working copy at DGROUP:4BF6 (3433:0a39) | C |
-| rest | the item(s) of the pile (layout not mapped) | ? |
+| +0x09..+0x1B | 19-byte item block, copied out when the item is taken (3433:03c6, 19 bytes from DGROUP:4BFF) | C (code), ? (item fields) |
 
 The pickup code finds the pile for a cell by matching cell and level
 (3433:0802); a dropped pile is shown by writing the `*ITEM 3` flat into the
