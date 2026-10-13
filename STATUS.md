@@ -17,10 +17,11 @@ as C. That is why "program logic rebuilt as C" stays at 0% by design.
 | Measure | Progress | Detail |
 |---|---|---|
 | Executable unpacked and disassembled | **100%** | ACD.EXE (PKLITE) unpacked; 2,492 functions, 200,039 bytes of code exported from Ghidra |
-| Game data with a working reader | **97.9%** of bytes, **99.1%** of files | 2,785 of 2,809 game files (51.1 of 52.2 MB) |
+| Game data with a working reader | **98.5%** of bytes, **99.3%** of files | 2,789 of 2,809 game files (51.4 of 52.2 MB) |
 | Game data partly decoded | 0.9% of bytes | 10 files: the two big save files, 5 encrypted help/menu texts, JAGTEMP.DAT |
-| Game data not decoded | 1.2% of bytes | 12 files: water/lava `.RCI`, VISION.EMS cache, 3 special images, live wilderness copies, EXTRA |
-| File formats fully understood | **32 of 41 (78%)** | 36 of 41 (88%) at least partly |
+| Game data not decoded | 0.5% of bytes | 6 files: VISION.EMS cache, the 4 live wilderness copies, EXTRA |
+| Game data never used by the game | 0.1% of bytes | 4 files: RAND.DAT, GUARD.DAT, POPTALK.IMG, S2.IMG |
+| File formats fully understood | **33 of 40 (83%)** | 37 of 40 (93%) at least partly |
 | Executable studied in depth | **9.0%** of functions, **18.7%** of code bytes | 224 functions cited in the hand-written analysis |
 | Behaviour facts written up in `docs/` | about 115 | about 85 confirmed by code or data, 17 likely, 11 open |
 | Verification checks | **27 of 27 pass** | `bsatool`, `imgtool`, `maptool`, `soundtool`, `datatool` |
@@ -64,8 +65,6 @@ What the percentages mean in practice:
 
 ### Not done
 - **Not decoded:**
-  - `.RCI` files (WATERANI, LAVAANI, SPPARTS);
-  - POPTALK.IMG, S2.IMG, UPDOWN.IMG;
   - the live wilderness copies WILD00x.64;
   - VISION.EMS (a cache the game writes);
   - EXTRA (4 bytes).
@@ -89,7 +88,7 @@ What the percentages mean in practice:
 | Original files | Count / size | New code | Check | Status |
 |---|---|---|---|---|
 | GLOBAL.BSA archive | 2,441 entries, 16.8 MB | `fs/afile.c` (`bsa_*`, `afile_*`) | `bsatool verify` | done |
-| `.IMG` images | 954 (946 in archive) | `gfx/img.c` `img_load`, `raw_image_load` | `imgtool verify`, `verifymisc` | 951 done, 3 open (POPTALK, S2, UPDOWN) |
+| `.IMG` images | 954 (946 in archive) | `gfx/img.c` `img_load`, `raw_image_load` | `imgtool verify`, `verifymisc` | 952 done; POPTALK and S2 never used by the game |
 | `.CIF` image sets | 59 | `cif_load` | `imgtool verifycif` | done |
 | `.SET` texture sets | 180 | `gfx/palette.c` `texset_load` | `imgtool verifyset` | done |
 | `.DFA` animations | 79 | `gfx/dfa.c` `dfa_load`, `dfa_frame` | `imgtool verifydfa` | done |
@@ -115,7 +114,7 @@ What the percentages mean in practice:
 | WILD00x.64 | 4 | — | — | not decoded |
 | Encrypted `.TXT` (HELP, QUESTION, SPELLMKR, DUNGEON, FOG) | 5 | decrypted by `fs/afile.c` | — | structure open |
 | JAGTEMP.DAT | 1 | read as text | — | partial |
-| `.RCI` (WATERANI, LAVAANI, SPPARTS) | 3, 320 KB | — | — | not decoded |
+| `.RCI` (WATERANI, LAVAANI; SPPARTS) | 3, 320 KB | `rci_load` (5 frames of 320x100); `tileset_load` (SPPARTS: 9 tiles of 3x3) | `imgtool verifymisc`, `verifypal` | done |
 | VISION.EMS, EXTRA | 2 | — | — | not decoded (cache / unknown) |
 | RAND.DAT, GUARD.DAT | 2 | — | never opened by the game | unused |
 | Sound drivers, banks, installer, launcher, manuals | 42 | — | — | not game data, out of scope |
@@ -206,7 +205,6 @@ module map, so treat the split as approximate.
 **In-game tests:** all done (automap mirroring confirmed, spell rows and options decoded).
 
 **Can still be done from the code alone** (slower, lower value):
-- `.RCI` water/lava animations and POPTALK / S2 / UPDOWN images;
 - the structure of the encrypted help, question and spellmaker texts;
 - the loot item contents and the quest / shop / sound areas of SAVEENGN;
 - behaviour notes for the least-studied subsystems (towns, combat, quests, menus).
@@ -219,9 +217,9 @@ module map, so treat the split as approximate.
 
 - **Game data:** every file in the game's `ARENA` folder plus every GLOBAL.BSA entry (the archive file itself is not double-counted). A file counts as "decoded" when a reader in `src/` decodes it and a check passes. Driver, installer and launcher files (42) are excluded as not game data.
 - **File formats:**
-  - 32 complete: archive, images, code-sized raw images, image sets, texture sets, DFA, CFA, palettes, light tables, menus, fonts, FLIC, VOC, XMI, MIF, RMD, INF, text decryption, string lists, keyed texts, template index, classes, save names, name chunks, spells, STATES, AUTOMAP, CITYDATA, IN<n>, LOG, WILD .00, the executable's tables.
+  - 33 complete: archive, images, code-sized raw images, water/lava `.RCI` animations, image sets, texture sets, DFA, CFA, palettes, light tables, menus, fonts, FLIC, VOC, XMI, MIF, RMD, INF, text decryption, string lists, keyed texts, template index, classes, save names, name chunks, spells, STATES, AUTOMAP, CITYDATA, IN<n>, LOG, WILD .00, the executable's tables.
   - 4 partial: SAVEENGN, SAVEGAME, encrypted text structure, JAGTEMP.
-  - 5 not decoded: RCI, VISION.EMS, EXTRA, WILD .64, three special images.
+  - 3 not decoded: VISION.EMS, EXTRA, WILD .64. (POPTALK.IMG, S2.IMG, RAND.DAT and GUARD.DAT are never used by the game and are not counted as formats.)
 - **Functions studied:** an original function counts when an address inside it is cited in the hand-written analysis (`docs/`, comments in `src/`, `PROGRESS.md`, `decomp/notes/*.md`). The generated listings are not counted. A citation means the function was read for a specific finding, not that all of it is understood.
 - **Behaviour facts:** confidence marks in the tables and paragraphs of `docs/` (C = confirmed, L = likely, ? = open).
 - **Checks:** every verification command of the five tools run against the original game files; all exit with success.

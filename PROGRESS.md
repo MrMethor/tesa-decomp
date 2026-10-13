@@ -292,4 +292,8 @@
 - 2026-10-13: in-game session 3: spell rows fully confirmed (duration = row 5 rounds, row 2 level step);
   0x28 = flag that blocks casting other spells while the effect is active; spell name starts at 0x34 (old 0x34 "flag" was the name's first
   letter; fixed in tables.h/.c). Spell format complete.
+- 2026-10-13: repo created (private GitHub MrMethor/tesa-decomp); .INF key now recovered at run time from
+  GLOBAL.BSA (no game table in the source). .RCI decoded: WATERANI/LAVAANI = 5 raw 320x100 frames (loader
+  1000:dfdb, agrees with OpenTESArena), SPPARTS = 3x3 tile set (2194:5301). UPDOWN.IMG = raw 8x16 scroll
+  arrows (2194:12f5 / 1000:5b04); POPTALK.IMG and S2.IMG never used. Data with a reader: 98.5% of bytes.
 

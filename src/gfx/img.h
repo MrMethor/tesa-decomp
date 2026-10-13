@@ -73,6 +73,17 @@ int  cif_decode(const uint8_t *buf, size_t len, arena_cif *out, const char **msg
 int  cif_load(const char *name, arena_cif *out, const char **msg);
 void cif_free(arena_cif *cif);
 
+/* .RCI screen animations (WATERANI.RCI, LAVAANI.RCI): raw 320x100 frames of
+ * 32000 bytes, no header, 5 per file. 1000:dfdb reads the 160000 bytes into
+ * three EMS pages (64000 + 64000 + 32000); 1000:a483 picks WATERANI for
+ * exteriors and water levels (DGROUP:CB5B) and LAVAANI otherwise. Agrees
+ * with OpenTESArena's RCIFile. Frames are returned in an arena_cif (free with
+ * cif_free). SPPARTS.RCI is a different thing despite the extension: nine
+ * 3x3 tiles for tileset_load (2194:5301 -> 1000:756c). */
+#define RCI_W 320
+#define RCI_H 100
+int  rci_load(const char *name, arena_cif *out, const char **msg);
+
 /* Read a whole file through the file layer into a malloc'd buffer. */
 uint8_t *afile_load_all(const char *name, uint32_t *size);
 
@@ -111,6 +122,11 @@ int  raw_screen_load(const char *name, arena_img *out, const char **msg);
  *     column ((facing + 0xE0) & 0x1FF) / 2 (256 positions per turn; 33 extra
  *     columns so the window never wraps) to screen (144, 7), then draws
  *     COMPASS.IMG over it; shown while DGROUP:05C8 bit 13 is set
+ *   UPDOWN.IMG 8x16 scroll arrows of the character-creation lists: loaded raw
+ *     by 2194:12f5, drawn by 1000:5b04 at x 38 (2194:1370-1381)
+ * POPTALK.IMG (24640 bytes) and S2.IMG (11520 bytes) are never used: no code
+ * refers to POPTALK's name string (DGROUP:8726), S2's name does not occur in
+ * ACD.EXE, and neither is opened in the logged play sessions.
  * DITHER.IMG / DITHER2.IMG are 800-byte tables, not pictures (3294:0341). */
 typedef struct raw_image_def {
 	const char *name;

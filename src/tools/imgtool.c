@@ -77,6 +77,7 @@ static int verify_pal(int nnames, char **names)
 	static const struct { const char *name; uint16_t w, h; } sets[] = {
 		{ "BRASS.CIF", 8, 8 }, { "BRASS2.CIF", 8, 8 }, { "MARBLE.CIF", 3, 3 },
 		{ "MARBLE2.CIF", 3, 3 }, { "PARCH.CIF", 20, 20 },
+		{ "SPPARTS.RCI", 3, 3 },   /* 2194:5301 -> 1000:756c (3, 3) */
 	};
 	int i, ok = 0, bad = 0, raw6 = 0;
 	for (i = 0; i < bsa_count() + nnames; i++) {
@@ -319,6 +320,21 @@ static int verify_misc(void)
 		} else {
 			printf("  CHARSPEL.DAT raw 320x200 screen\n");
 			img_free(&img);
+		}
+	}
+	{
+		static const char *const rcis[] = { "WATERANI.RCI", "LAVAANI.RCI" };
+		for (i = 0; i < 2; i++) {
+			arena_cif   anim;
+			const char *msg = NULL;
+			if (rci_load(rcis[i], &anim, &msg) != 0) {
+				printf("  %-12s %s\n", rcis[i], msg);
+				bad++;
+				continue;
+			}
+			printf("  %-12s %d frames of %dx%d\n", rcis[i], anim.count, RCI_W, RCI_H);
+			bad += anim.count != 5;
+			cif_free(&anim);
 		}
 	}
 	for (i = 0; i < raw_image_def_count; i++) {

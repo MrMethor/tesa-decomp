@@ -251,6 +251,43 @@ int cif_load(const char *name, arena_cif *out, const char **msg)
 	return rc;
 }
 
+int rci_load(const char *name, arena_cif *out, const char **msg)
+{
+	uint32_t size, frame = (uint32_t)RCI_W * RCI_H;
+	uint8_t *buf = afile_load_all(name, &size);
+	int      i;
+
+	memset(out, 0, sizeof *out);
+	if (!buf)
+		return fail(msg, "file not found");
+	if (size == 0 || size % frame) {
+		free(buf);
+		return fail(msg, "size is not a whole number of 320x100 frames");
+	}
+	out->count = (int)(size / frame);
+	out->frames = calloc((size_t)out->count, sizeof *out->frames);
+	if (!out->frames) {
+		free(buf);
+		out->count = 0;
+		return fail(msg, "out of memory");
+	}
+	for (i = 0; i < out->count; i++) {
+		arena_img *f = &out->frames[i];
+		f->width = RCI_W;
+		f->height = RCI_H;
+		f->headerless = 1;
+		f->pixels = malloc(frame);
+		if (!f->pixels) {
+			free(buf);
+			cif_free(out);
+			return fail(msg, "out of memory");
+		}
+		memcpy(f->pixels, buf + (size_t)i * frame, frame);
+	}
+	free(buf);
+	return 0;
+}
+
 void cif_free(arena_cif *cif)
 {
 	int i;
@@ -317,6 +354,7 @@ const raw_image_def raw_image_defs[] = {
 	{ "CITY.IMG", 16, 11 }, { "TOWN.IMG", 9, 10 }, { "VILLAGE.IMG", 8, 8 },
 	{ "DUNGEON.IMG", 14, 8 }, { "P1.IMG", 320, 53 }, { "NOSPELL.IMG", 25, 19 },
 	{ "NOCAMP.IMG", 25, 19 }, { "SLIDER.IMG", 289, 7 },
+	{ "UPDOWN.IMG", 8, 16 },
 };
 const int raw_image_def_count = (int)(sizeof raw_image_defs / sizeof raw_image_defs[0]);
 
