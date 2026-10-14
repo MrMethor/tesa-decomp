@@ -333,3 +333,10 @@
   walking, ramp, coasting, sidestepping, wall slide, corner, closed door, walking while turning) match
   the original on every frame. `tools/coverage.py` recomputes the studied-code figures (254 functions,
   21.0% of code bytes).
+- 2026-10-14: platform tables and ceiling height are per level (restored from the clean copy DGROUP:CC04,
+  scaled by 192/256 in exterior mode and by s/256 for `*CEILING h s`; 1000:ec17, efab); camera sits 15
+  units behind the player (1000:a919, measured on a captured frame: view 320x147, centre 159,73 at
+  DGROUP:C3D6/C3D8). First renderer (`src/render/view.c`, `arenashot`), not calibrated yet.
+- 2026-10-14: **decision: the port moves to Rust** (Cargo workspace; simulation separate from presentation so
+  a 3D renderer, modern controls and better audio can be added later as opt-in modes). The C code stays as
+  the reference until each Rust module matches it, then moves to `legacy/c/`.

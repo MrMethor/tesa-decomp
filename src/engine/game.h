@@ -31,6 +31,11 @@ int  eng_game_load_slot(eng_game *g, int slot, char *err, int errsz);
 
 void eng_game_frame(eng_game *g, const eng_input *in);
 
+/* Where the view is drawn from: the original places the camera 15 units
+ * behind the player (30 x sine >> 16, without the doubling of a walking
+ * step; 1000:a919). */
+void eng_camera(const eng_game *g, int *x, int *z);
+
 /* Movement keys of a scenario step as engine input. */
 void eng_input_from_keys(const scn_keys *k, eng_input *in);
 

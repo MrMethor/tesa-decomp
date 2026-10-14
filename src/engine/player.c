@@ -61,7 +61,7 @@ void eng_player_speeds(eng_player *p)
 
 /* ---- "Collision grid" ------------------------------------------------ */
 
-static void box_heights(const eng_level *lvl, const eng_tables *t, uint16_t v, int *bottom, int *top)
+static void box_heights(const eng_level *lvl, uint16_t v, int *bottom, int *top)
 {
 	unsigned hi = v >> 8, set = 0;
 	if (lvl->lflags & LF_UPPER) {
@@ -69,8 +69,8 @@ static void box_heights(const eng_level *lvl, const eng_tables *t, uint16_t v, i
 		if (lvl->mflags & MF_EXTERIOR)
 			set = 2;
 	}
-	*bottom = t->box_bottom[set][hi & 7];
-	*top = t->box_thick[(lvl->mflags & MF_EXTERIOR) ? 1 : 0][(hi >> 3) & 15] + *bottom;
+	*bottom = lvl->box_bottom[set][hi & 7];
+	*top = lvl->box_thick[(lvl->mflags & MF_EXTERIOR) ? 1 : 0][(hi >> 3) & 15] + *bottom;
 }
 
 /* What a neighbour cell stamps into the grid: returns the stamp index or -1,
@@ -108,13 +108,13 @@ static int cell_stamp(const eng_level *lvl, const eng_tables *t, uint16_t v, int
 		return STAMP_SOLID;
 	{
 		int bottom, top, ax;
-		box_heights(lvl, t, v, &bottom, &top);
+		box_heights(lvl, v, &bottom, &top);
 		if (bottom > y)
 			return -1;                  /* walk under it */
 		ax = top;
 		if (!(lvl->mflags & MF_EXTERIOR)) {
 			ax += STAND_Y;
-			if ((uint16_t)ax >= (uint16_t)t->ceiling_hi)
+			if ((uint16_t)ax >= (uint16_t)lvl->ceiling)
 				return STAMP_SOLID;     /* reaches the ceiling */
 		}
 		if ((int16_t)(ax - y) > t->step_up)
@@ -332,11 +332,11 @@ static void platform_target(move_ctx *m, uint16_t v)
 	int bottom, top, ax;
 	if (p->y < STAND_Y || (v & 0x8000))
 		return;
-	box_heights(m->lvl, m->t, v, &bottom, &top);
+	box_heights(m->lvl, v, &bottom, &top);
 	if (bottom > p->y)
 		return;
 	ax = top + STAND_Y;
-	if (!(m->lvl->mflags & MF_EXTERIOR) && (uint16_t)ax > (uint16_t)m->t->ceiling_hi)
+	if (!(m->lvl->mflags & MF_EXTERIOR) && (uint16_t)ax > (uint16_t)m->lvl->ceiling)
 		return;
 	p->target_y = (int16_t)ax;
 }

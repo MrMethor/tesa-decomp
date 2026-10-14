@@ -42,9 +42,11 @@ after a save is loaded the first frame still walks at the base speed 20; the
 character's speed applies from the second frame. (C: oracle)
 
 The camera is not at the player position: after movement the original moves
-its working copy of the position 30 units backwards along the facing
-(1000:a919) and draws from there. The kept position (BA62) is the player's.
-(c)
+its working copy of the position backwards along the facing by
+`floor(30 * sine / 65536)` per axis (1000:a919; unlike a walking step the 30
+is not doubled, so this is 15 units) and draws the next frame from there.
+The kept position (BA62) is the player's. (C: captured frame, camera at
+DGROUP:C3DE / C3E0)
 
 ## Speeds
 

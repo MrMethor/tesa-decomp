@@ -8,8 +8,8 @@
 #define DG_STAMPS      0xE3A2
 #define DG_NEAR_PLAYER 0xE7B8
 #define DG_NEAR_ACTOR  0xE7EE
-#define DG_BOX_BOTTOM  0xCB94
-#define DG_BOX_THICK   0xCBC4
+#define DG_BOX_BOTTOM  0xCC04   /* clean copy; the working copy CB94 is rebuilt from it per level */
+#define DG_BOX_THICK   0xCC34
 #define DG_CEILING     0xD80A
 #define DG_FALL        0xE8BC
 #define DG_BOB         0xE824

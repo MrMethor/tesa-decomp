@@ -43,6 +43,14 @@ add_library(engine STATIC
 target_include_directories(engine PUBLIC src)
 target_link_libraries(engine PUBLIC arena)
 
+# Renderer (presentation; calibrated against frames of the original).
+add_library(render STATIC src/render/view.c)
+target_include_directories(render PUBLIC src)
+target_link_libraries(render PUBLIC engine)
+
+add_executable(arenashot src/port/arenashot.c src/tools/png.c)
+target_link_libraries(arenashot PRIVATE render)
+
 # Headless scenario runner for differential tests (tools/statecmp.py).
 add_executable(arenarun src/port/arenarun.c)
 target_link_libraries(arenarun PRIVATE engine)

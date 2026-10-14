@@ -1,0 +1,4 @@
+# Stand still at the start of the start dungeon for 3 frames (view check).
+save 2
+wait 3
+end

@@ -10,6 +10,7 @@
 #include <stdint.h>
 
 #include "data/save.h"
+#include "engine/consts.h"
 #include "world/inf.h"
 
 #define LEVEL_DIM   128
@@ -50,10 +51,16 @@ typedef struct eng_level {
 	eng_flat flats[LEVEL_FLATS];  /* by the low byte of a type-8 MAP1 cell */
 	int      nflats;
 	int      levelup_slot, leveldown_slot;   /* wall texture slots, 0 = none */
+	int16_t  ceiling;             /* wall height: *CEILING h (100 if absent or <= 32) */
+	int      open_sky;            /* *CEILING third number non-zero */
+	int      box_scale;           /* *CEILING second number if >= 32, else 0 */
+	int16_t  box_bottom[3][8];    /* platform tables scaled for this level */
+	int16_t  box_thick[2][16];
 } eng_level;
 
 /* Fill `lvl` from a loaded SAVEGAME and its parsed .INF (may be NULL). */
-void eng_level_from_save(eng_level *lvl, const arena_savegame *sg, const arena_inf *inf);
+void eng_level_from_save(eng_level *lvl, const eng_tables *t, const arena_savegame *sg,
+                         const arena_inf *inf);
 
 /* The .INF file named by a SAVEGAME, upper-cased (e.g. "STKEEP1.INF"). */
 void eng_save_inf_name(const arena_savegame *sg, char *out, int outsz);

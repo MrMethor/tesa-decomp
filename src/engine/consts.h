@@ -36,9 +36,10 @@ typedef struct eng_tables {
 	uint8_t  stamp[STAMP_COUNT][16][16];          /* collision masks, row-major */
 	int16_t  near_player[9][3];   /* neighbour: column shift, row shift, byte offset */
 	int16_t  near_actor[9][3];
-	int16_t  box_bottom[3][8];    /* platform bottom by height code: plain, upper storey, exterior */
+	int16_t  box_bottom[3][8];    /* platform bottom by height code: plain, upper storey, exterior;
+	                                 unscaled (eng_level holds the level's scaled copy) */
 	int16_t  box_thick[2][16];    /* platform thickness by code: interior, exterior */
-	int16_t  ceiling_lo, ceiling_hi;
+	int16_t  ceiling_lo, ceiling_hi;   /* initial values only; the level sets its own */
 	int16_t  fall_target, fall_step, step_up;     /* vertical movement */
 	int16_t  bob[32];             /* head bob: 16 eye offsets, then 16 view offsets */
 	int16_t  swim_bob[8];

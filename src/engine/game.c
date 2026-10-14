@@ -59,7 +59,7 @@ int eng_game_load_slot(eng_game *g, int slot, char *err, int errsz)
 	have_se = saveengn_load(name, se) == 0;
 	eng_save_inf_name(sg, inf_name, sizeof inf_name);
 	have_inf = inf_load(inf_name, &inf) == 0;
-	eng_level_from_save(&g->lvl, sg, have_inf ? &inf : NULL);
+	eng_level_from_save(&g->lvl, &g->t, sg, have_inf ? &inf : NULL);
 	eng_player_from_save(&g->pl, &g->t, sg, have_se ? se : NULL);
 	if (have_inf)
 		inf_free(&inf);
@@ -88,4 +88,17 @@ void eng_input_from_keys(const scn_keys *k, eng_input *in)
 	if (scn_key(k, 0x4D)) in->keys |= IN_RIGHT;
 	if (scn_key(k, 0x1D)) in->keys |= IN_CTRL;
 	if (scn_key(k, 0x2A) || scn_key(k, 0x36)) in->keys |= IN_SHIFT;
+}
+
+static int16_t mul_hi16(int a, int b)
+{
+	int32_t p = (int32_t)(int16_t)a * (int32_t)(int16_t)b;
+	return (int16_t)(p >= 0 ? p / 65536 : -((-p + 65535) / 65536));
+}
+
+void eng_camera(const eng_game *g, int *x, int *z)
+{
+	unsigned back = (g->pl.angle + 256) & 511;
+	*x = (uint16_t)(g->pl.x + mul_hi16(30, g->t.sine[back]));
+	*z = (uint16_t)(g->pl.z + mul_hi16(30, g->t.sine[back + 128]));
 }
