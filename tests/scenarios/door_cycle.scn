@@ -1,0 +1,15 @@
+# A door opens fully, stays open while the player is near, and closes when
+# the player walks 3 cells away. The door at column 31, row 17 is opened by
+# setting its open bit, as a click on it does.
+save 2
+watch 31 17
+hold left 2
+hold up 22
+set_cell 31 17 b210
+wait 10
+check opened
+hold down 30
+check walked_away
+wait 10
+check closed
+end

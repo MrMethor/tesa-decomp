@@ -9,6 +9,8 @@ pub enum Step {
     Hold { keys: KeyState, frames: u32 },
     /// Label the state at this point.
     Check(String),
+    /// Set MAP1 cell (col, row) before the next frame.
+    SetCell { col: usize, row: usize, value: u16 },
 }
 
 /// One simulated frame of a scenario.
@@ -18,12 +20,16 @@ pub struct ScenarioFrame {
     pub keys: KeyState,
     /// Label of the state before this frame.
     pub label: Option<String>,
+    /// Cells to set after this frame's state is recorded, before its input.
+    pub actions: Vec<(usize, usize, u16)>,
 }
 
 #[derive(Debug, Clone)]
 pub struct Scenario {
     pub slot: u32,
     pub steps: Vec<Step>,
+    /// MAP1 cells recorded in every state line.
+    pub watch: Vec<(usize, usize)>,
 }
 
 fn key_code(name: &str) -> Option<u8> {
@@ -60,12 +66,14 @@ impl Scenario {
     pub fn parse(text: &str) -> Result<Scenario, String> {
         let mut slot = None;
         let mut steps = Vec::new();
+        let mut watch = Vec::new();
         for (n, raw) in text.lines().enumerate() {
             let line = raw.split('#').next().unwrap_or("");
             let mut words = line.split_whitespace();
             let Some(cmd) = words.next() else { continue };
             let a1 = words.next();
             let a2 = words.next();
+            let a3 = words.next();
             let bad = || format!("line {}: bad '{}' line", n + 1, cmd);
             match (cmd, a1, a2) {
                 ("end", _, _) => break,
@@ -78,11 +86,19 @@ impl Scenario {
                     steps.push(Step::Hold { keys: KeyState::default(), frames: f.parse().map_err(|_| bad())? })
                 }
                 ("check", Some(label), _) => steps.push(Step::Check(label.to_string())),
+                ("watch", Some(c), Some(r)) => {
+                    watch.push((c.parse().map_err(|_| bad())?, r.parse().map_err(|_| bad())?))
+                }
+                ("set_cell", Some(c), Some(r)) => steps.push(Step::SetCell {
+                    col: c.parse().map_err(|_| bad())?,
+                    row: r.parse().map_err(|_| bad())?,
+                    value: a3.and_then(|v| u16::from_str_radix(v, 16).ok()).ok_or_else(bad)?,
+                }),
                 _ => return Err(bad()),
             }
         }
         let slot = slot.ok_or("no 'save' line")?;
-        Ok(Scenario { slot, steps })
+        Ok(Scenario { slot, steps, watch })
     }
 
     pub fn load(path: &std::path::Path) -> Result<Scenario, String> {
@@ -95,13 +111,20 @@ impl Scenario {
     pub fn frames(&self) -> (Vec<ScenarioFrame>, Option<String>) {
         let mut out = Vec::new();
         let mut label = None;
+        let mut actions = Vec::new();
         let mut index = 0;
         for st in &self.steps {
             match st {
                 Step::Check(l) => label = Some(l.clone()),
+                Step::SetCell { col, row, value } => actions.push((*col, *row, *value)),
                 Step::Hold { keys, frames } => {
                     for _ in 0..*frames {
-                        out.push(ScenarioFrame { index, keys: *keys, label: label.take() });
+                        out.push(ScenarioFrame {
+                            index,
+                            keys: *keys,
+                            label: label.take(),
+                            actions: std::mem::take(&mut actions),
+                        });
                         index += 1;
                     }
                 }

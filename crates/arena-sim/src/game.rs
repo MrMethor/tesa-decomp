@@ -9,6 +9,7 @@ use arena_data::{Archive, DataError};
 use crate::consts::Tables;
 use crate::fixed::mul_hi;
 use crate::level::Level;
+use crate::door;
 use crate::player::{self, Keys, Player};
 
 /// The original's PIT tick rate; its 3D loop waits two ticks per frame.
@@ -61,11 +62,13 @@ impl Default for FrameInput {
     }
 }
 
-/// Things that happened during a frame, for renderers and audio (sounds at a
-/// position, messages, doors, level changes). None are produced yet.
+/// Things that happened during a frame, for renderers and audio.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
-pub enum Event {}
+pub enum Event {
+    /// Play sound `id` (the original's sound list) at map cell (col, row).
+    Sound { id: u8, col: u8, row: u8 },
+}
 
 pub struct Game {
     pub tables: Tables,
@@ -84,15 +87,54 @@ impl Game {
         let inf = Inf::load(archive, &save.inf_name())?;
         let level = Level::from_save(&tables, &save, Some(&inf));
         let player = Player::from_save(&save, engn.as_ref());
-        Ok(Game { tables, level, player, frame: 0 })
+        let mut game = Game { tables, level, player, frame: 0 };
+        // The first loop iteration's cell walk runs before its movement step.
+        game.update_doors(&mut Vec::new());
+        Ok(game)
     }
 
-    /// Advance one original 3D-loop frame.
+    /// Advance one original 3D-loop frame. A step runs from one movement
+    /// step to the next, like the original stepped at its movement call: the
+    /// player moves, then the next loop iteration's cell walk moves the doors
+    /// around the new camera position.
     pub fn step(&mut self, input: &FrameInput) -> Vec<Event> {
+        let mut events = Vec::new();
         let FrameInput::Classic(keys) = input;
         player::frame(&mut self.player, &mut self.level, &self.tables, &keys.movement(), self.frame);
         self.frame = self.frame.wrapping_add(1);
-        Vec::new()
+        self.update_doors(&mut events);
+        events
+    }
+
+    fn update_doors(&mut self, events: &mut Vec<Event>) {
+        let (cx, cz) = self.camera();
+        door::update(&mut self.level, (cx >> 7) as i32, (cz >> 7) as i32, events);
+    }
+
+    /// The player activates the door at (col, row), as a click on it does.
+    pub fn activate_door(&mut self, col: usize, row: usize) -> Result<Vec<Event>, door::Refusal> {
+        let mut events = Vec::new();
+        let (pc, pr) = ((self.player.x >> 7) as i32, (self.player.z >> 7) as i32);
+        door::activate(&mut self.level, col, row, pc, pr, &mut events)?;
+        Ok(events)
+    }
+
+    /// The door the player faces, if one is within reach: the first door
+    /// cell along the facing within 1.5 cells. Used by the keyboard
+    /// "activate" control, which the original does not have (it picks the
+    /// cell under the mouse cursor).
+    pub fn door_ahead(&self) -> Option<(usize, usize)> {
+        let p = &self.player;
+        for step in 1..=12 {
+            let d = (step * 16) as i16;
+            let x = p.x.wrapping_add(mul_hi(d.wrapping_mul(2), self.tables.sin(p.angle)) as u16);
+            let z = p.z.wrapping_add(mul_hi(d.wrapping_mul(2), self.tables.cos(p.angle)) as u16);
+            let (col, row) = ((x >> 7) as usize, (z >> 7) as usize);
+            if col < crate::level::DIM && row < crate::level::DIM && self.level.map1[row * crate::level::DIM + col] >> 12 == 0xB {
+                return Some((col, row));
+            }
+        }
+        None
     }
 
     /// Where the view is drawn from: 15 units behind the player

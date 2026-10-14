@@ -10,6 +10,7 @@
 
 pub mod cell;
 pub mod consts;
+pub mod door;
 pub mod fixed;
 pub mod game;
 pub mod level;

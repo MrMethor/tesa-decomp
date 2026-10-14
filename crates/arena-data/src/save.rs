@@ -30,10 +30,15 @@ pub mod sg {
     pub const MHDR: usize = 0x83A;
     pub const WIDTH: usize = 0x84F;
     pub const HEIGHT: usize = 0x851;
+    pub const VIEW_RADIUS: usize = 0x88C;
     pub const FLAT_BASE: usize = 0x886;
     pub const WALK_SPEED: usize = 0x888;
     pub const TURN_SPEED: usize = 0x88A;
     pub const FLAGS: usize = 0x890;
+    /// Door sounds by door kind: slam (closed), open, -, start closing.
+    pub const DOOR_SLAM: usize = 0x8B4;
+    pub const DOOR_OPEN: usize = 0x8B8;
+    pub const DOOR_CLOSE_START: usize = 0x8C0;
     pub const MODE: usize = 0x892;
     pub const POS_X: usize = 0x8C8;
     pub const POS_Y: usize = 0x8CA;

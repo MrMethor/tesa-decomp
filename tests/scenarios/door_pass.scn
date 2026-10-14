@@ -1,0 +1,13 @@
+# Walk through an open door: open the door in the east wall of the start
+# room, turn towards it and walk through into the next room.
+save 2
+watch 31 17
+hold left 2
+hold up 22
+set_cell 31 17 b210
+wait 6
+hold right 3
+hold up 25
+check through
+wait 4
+end

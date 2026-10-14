@@ -8,6 +8,11 @@ A scenario is a text file, one command per line, '#' starts a comment:
                             hold the keys for that many 3D-loop frames
     wait <frames>           no keys held
     check <label>           name the state at this point
+    watch <col> <row>       record MAP1 cell (col, row) in every state line
+                            (field cell_<col>_<row>)
+    set_cell <col> <row> <hex>
+                            set MAP1 cell (col, row) before the next frame
+                            (e.g. a door's open bit, as a click would)
     end                     stop (optional)
 
 Time is counted in 3D-loop frames, not wall-clock time: both programs are
@@ -37,9 +42,9 @@ for row, base in (("qwertyuiop", 0x10), ("asdfghjkl", 0x1E), ("zxcvbnm", 0x2C)):
 for i in range(10):
     SCANCODES["f%d" % (i + 1)] = 0x3B + i
 
-Scenario = collections.namedtuple("Scenario", "slot steps")
+Scenario = collections.namedtuple("Scenario", "slot steps watch")
 Step = collections.namedtuple("Step", "kind keys frames label")
-Frame = collections.namedtuple("Frame", "index keys label")
+Frame = collections.namedtuple("Frame", "index keys label actions")
 
 
 class ScenarioError(Exception):
@@ -58,6 +63,7 @@ def parse_keys(text):
 def load(path):
     slot = None
     steps = []
+    watch = []
     with open(path) as f:
         for n, raw in enumerate(f, 1):
             line = raw.split("#", 1)[0].split()
@@ -73,6 +79,10 @@ def load(path):
                     steps.append(Step("hold", frozenset(), int(args[0]), None))
                 elif cmd == "check":
                     steps.append(Step("check", None, 0, args[0]))
+                elif cmd == "watch":
+                    watch.append((int(args[0]), int(args[1])))
+                elif cmd == "set_cell":
+                    steps.append(Step("set_cell", None, 0, (int(args[0]), int(args[1]), int(args[2], 16))))
                 elif cmd == "end":
                     break
                 else:
@@ -81,22 +91,29 @@ def load(path):
                 raise ScenarioError("%s:%d: %s" % (path, n, e))
     if slot is None:
         raise ScenarioError("%s: no 'save' line" % path)
-    return Scenario(slot, steps)
+    return Scenario(slot, steps, watch)
 
 
 def frames(scn):
-    """Yield one Frame per simulated frame, then a final Frame with keys None."""
+    """Yield one Frame per simulated frame, then a final Frame with keys None.
+    A frame's actions (set_cell) are applied after its state is recorded and
+    before its input."""
     index = 0
     label = None
+    actions = []
     for st in scn.steps:
         if st.kind == "check":
             label = st.label
             continue
+        if st.kind == "set_cell":
+            actions.append(st.label)
+            continue
         for _ in range(st.frames):
-            yield Frame(index, st.keys, label)
+            yield Frame(index, st.keys, label, actions)
             label = None
+            actions = []
             index += 1
-    yield Frame(index, None, label)
+    yield Frame(index, None, label, actions)
 
 
 def all_scancodes(scn):

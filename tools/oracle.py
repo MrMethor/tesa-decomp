@@ -171,6 +171,17 @@ class Oracle:
         self.run()
         self.wait_break(BP_MOVE, timeout)
 
+    def map1_seg(self):
+        return struct.unpack("<H", self.read(0xD806, 2))[0]
+
+    def read_cell(self, col, row):
+        data = self.d.dump("%04X:%04X" % (self.map1_seg(), (row * 128 + col) * 2), 2, "oracle_cell.bin")
+        return struct.unpack("<H", data)[0]
+
+    def set_cell(self, col, row, value):
+        self.d.exec("SM %04X:%04X %02X %02X" % (self.map1_seg(), (row * 128 + col) * 2,
+                                                 value & 0xFF, value >> 8))
+
     def state(self):
         lo = min(f[1] for f in STATE_FIELDS)
         hi = max(f[1] + struct.calcsize(f[2]) for f in STATE_FIELDS)
@@ -220,7 +231,11 @@ def main():
             for ev in scenario.frames(scn):
                 st = o.state()
                 st["frame"] = (st["frame"] - frame0) & 0xFFFF
+                for col, row in scn.watch:
+                    st["cell_%d_%d" % (col, row)] = o.read_cell(col, row)
                 out.write(scenario.format_state(ev.label, ev.index, st) + "\n")
+                for col, row, value in ev.actions:
+                    o.set_cell(col, row, value)
                 if ev.keys is None:
                     break
                 o.set_keys(ev.keys, managed)

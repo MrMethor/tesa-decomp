@@ -62,7 +62,8 @@ field on the `statecmp.py` command line and must be justified here.
 
 | Behaviour | Kind | Note |
 |---|---|---|
-| (none so far) | | |
+| E key opens the door ahead | intentional modernisation | the original only opens doors by clicking them |
+| open doors drawn fully open at once | presentation, temporary | the original animates them by door kind |
 
 Kinds: exact match required; within tolerance (justified); known
 nondeterminism (random state or timing not yet controlled); intentional
@@ -74,7 +75,7 @@ modernisation (rendering, controls, platform; must not change game rules).
 |---|---|---|
 | 1. Test harness | start from a save, input script format, original stepped by frames, state format, comparison | **done**: `oracle.py`, `scenario.py`, `statecmp.py`, `difftest.py` |
 | 2. Smallest playable slice | load a real level, move and turn, collision; then render it and play it in a window | **done**: movement (7 of 7 scenarios match), classic renderer calibrated against captured frames (`docs/rendering.md`), playable window (`crates/arena`) |
-| 3. Faithful navigation | stairs and level changes, doors, chasms and climbing, platforms, water, jumping, mouse steering | open |
+| 3. Faithful navigation | stairs and level changes, doors, chasms and climbing, platforms, water, jumping, mouse steering | doors **done** (`docs/doors.md`, 2 scenarios); the rest open |
 | 4. Gameplay systems | actors and AI, combat, items and inventory, spells, quests, save/load | open |
 | 5. Presentation and platform | 3D renderer (wgpu), modern controls, audio, configuration, other platforms | open; seams in place (`FrameInput`, `Event`, renderer separate from the rules) |
 
@@ -103,3 +104,5 @@ Scenario coverage (`tools/difftest.py`):
 | door_closed | a closed door blocks; sliding past it |
 | turn_walk | walking while turning, sidestepping into a wall |
 | view_start | standing still (also the pose used to check the renderer) |
+| door_cycle | a door opens, stays open while the player is near, closes after the player walks 3 cells away |
+| door_pass | walking through an open door into the next room |

@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
-use winit::event::{ElementState, KeyEvent, WindowEvent};
+use winit::event::{ElementState, KeyEvent, MouseButton, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{Window, WindowId};
@@ -41,12 +41,33 @@ struct App {
     window: Option<Rc<Window>>,
     surface: Option<softbuffer::Surface<Rc<Window>, Rc<Window>>>,
     keys: KeyState,
+    /// Cursor in window pixels.
+    cursor: (f64, f64),
     frame_time: Duration,
     next_frame: Instant,
     error: Option<String>,
 }
 
 impl App {
+    /// The picture's place in the window: offset and size of the 4:3 area.
+    fn picture_rect(&self) -> Option<(usize, usize, usize, usize)> {
+        let size = self.window.as_ref()?.inner_size();
+        let (ww, wh) = (size.width as usize, size.height as usize);
+        if ww == 0 || wh == 0 {
+            return None;
+        }
+        let (pw, ph) = if ww * 3 >= wh * 4 { (wh * 4 / 3, wh) } else { (ww, ww * 3 / 4) };
+        Some(((ww - pw) / 2, (wh - ph) / 2, pw, ph))
+    }
+
+    /// Window pixel to 320 x 200 frame pixel.
+    fn to_screen(&self, x: f64, y: f64) -> Option<(usize, usize)> {
+        let (ox, oy, pw, ph) = self.picture_rect()?;
+        let (fx, fy) = ((x - ox as f64) / pw as f64, (y - oy as f64) / ph as f64);
+        ((0.0..1.0).contains(&fx) && (0.0..1.0).contains(&fy))
+            .then_some(((fx * SCREEN_W as f64) as usize, (fy * SCREEN_H as f64) as usize))
+    }
+
     fn present(&mut self) -> Result<(), String> {
         let (Some(window), Some(surface)) = (self.window.as_ref(), self.surface.as_mut()) else {
             return Ok(());
@@ -108,6 +129,9 @@ impl ApplicationHandler for App {
                 if code == KeyCode::Escape {
                     event_loop.exit();
                 }
+                if code == KeyCode::KeyE && state == ElementState::Pressed {
+                    self.session.activate_ahead();
+                }
                 if let Some(sc) = scancode(code) {
                     match state {
                         ElementState::Pressed => self.keys.press(sc),
@@ -116,6 +140,12 @@ impl ApplicationHandler for App {
                 }
             }
             WindowEvent::Focused(false) => self.keys = KeyState::default(),
+            WindowEvent::CursorMoved { position, .. } => self.cursor = (position.x, position.y),
+            WindowEvent::MouseInput { state: ElementState::Pressed, button: MouseButton::Left, .. } => {
+                if let Some((x, y)) = self.to_screen(self.cursor.0, self.cursor.1) {
+                    self.session.click(x, y);
+                }
+            }
             WindowEvent::RedrawRequested => {
                 if let Err(e) = self.present() {
                     self.error = Some(e);
@@ -151,6 +181,7 @@ pub fn run(session: Session) -> Result<(), String> {
         window: None,
         surface: None,
         keys: KeyState::default(),
+        cursor: (0.0, 0.0),
         frame_time: Duration::from_secs_f64(TICKS_PER_FRAME as f64 / TICK_HZ),
         next_frame: Instant::now(),
         error: None,

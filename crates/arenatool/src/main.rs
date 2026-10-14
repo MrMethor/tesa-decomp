@@ -213,7 +213,7 @@ fn render(args: &[String]) -> Result<String, String> {
     let pal = Palette::load(&archive, "PAL.COL").map_err(|e| e.to_string())?;
     let mut screen = [0u8; SCREEN_W * SCREEN_H];
     let mut depth = vec![0f32; SCREEN_W * SCREEN_H];
-    render_with_depth(&mut screen, Some(&mut depth), &game.level, &textures, lgt.as_ref(), &Camera::of(&game), &p);
+    render_with_depth(&mut screen, Some(&mut depth), None, &game.level, &textures, lgt.as_ref(), &Camera::of(&game), &p);
     std::fs::write(format!("{prefix}.bin"), screen).map_err(|e| e.to_string())?;
     let depth_bytes: Vec<u8> = depth.iter().flat_map(|d| d.to_le_bytes()).collect();
     std::fs::write(format!("{prefix}.depth"), depth_bytes).map_err(|e| e.to_string())?;

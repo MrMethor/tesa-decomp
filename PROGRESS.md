@@ -356,3 +356,9 @@
   loads a save slot, runs the simulation at the original's 9.1 frames per second with the original's
   keyboard controls, draws each frame with the classic renderer scaled to a 4:3 window. The interface rows
   are taken from the save's screen until the port draws its own interface.
+- 2026-10-14: doors (`docs/doors.md`): click activation within one cell, lock check, open amount 0-7 + closing
+  bit in bits 8-11, moved every frame by the renderer's cell walk around the camera (radius DGROUP:C394):
+  near (within 2 cells) opens, far closes; found with a memory breakpoint on a door cell (1000:ce2d).
+  Harness: scenarios can `watch` map cells and `set_cell` (open a door as a click would); the frame boundary
+  analysis put the port's door update after movement. 9 of 9 scenarios match. In the game: left click on a
+  door in the centre of the view opens it, E opens the door ahead (addition).

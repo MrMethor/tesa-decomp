@@ -2,8 +2,8 @@
 
     python -I statecmp.py <oracle.state> <port.state> [--fields x,y,z,angle,level] [--all]
 
-By default the behavioural fields x, y, z, angle and level are compared
-exactly; tolerances can be given as name:tol (e.g. x:1). Fields starting
+By default the behavioural fields x, y, z, angle and level, and every
+watched map cell (cell_<col>_<row>), are compared exactly; tolerances can be given as name:tol (e.g. x:1). Fields starting
 with d_ are diagnostics: shown next to a mismatch, never compared.
 Exit code 0 when every compared field matches on every frame.
 """
@@ -32,7 +32,8 @@ def compare(a_rows, b_rows, fields, show_all=False, limit=20):
         ia, la, sa = a_rows[i]
         ib, lb, sb = b_rows[i]
         bad = []
-        for name, tol in fields:
+        cells = [(k, 0) for k in sa if k.startswith("cell_") and k in sb]
+        for name, tol in fields + cells:
             if name not in sa or name not in sb:
                 continue
             if abs(sa[name] - sb[name]) > tol:

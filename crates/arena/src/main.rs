@@ -5,7 +5,8 @@
 //!
 //! Defaults: `run/ARENA`, `bin/ACD_unpacked.EXE`, slot 2 (paths relative to
 //! the repository). Controls are the original's: arrow keys walk and turn,
-//! Ctrl + Left / Right sidesteps; Esc quits. The game advances one original
+//! Ctrl + Left / Right sidesteps; a left click on a door in the middle of
+//! the view opens it (E opens the door in front, an addition); Esc quits. The game advances one original
 //! 3D-loop frame every two timer ticks (about 9.1 frames per second), like
 //! the original; each frame is drawn by the classic renderer and scaled to
 //! the window at a 4:3 aspect.
@@ -20,7 +21,7 @@ use arena_data::inf::Inf;
 use arena_data::palette::{LightTables, Palette};
 use arena_data::save::SaveGame;
 use arena_data::Archive;
-use arena_render_classic::view::{render, Camera, Textures, ViewParams};
+use arena_render_classic::view::{render_picking, Camera, Picking, Textures, ViewParams};
 use arena_render_classic::{Screen, SCREEN_W, SCREEN_H, VIEW_H};
 use arena_sim::{FrameInput, Game, KeyState};
 
@@ -36,6 +37,7 @@ pub struct Session {
     /// 0x00RRGGBB per palette index.
     palette: [u32; 256],
     screen: Box<Screen>,
+    picking: Picking,
 }
 
 impl Session {
@@ -60,6 +62,7 @@ impl Session {
             interface,
             palette,
             screen: Box::new([0; SCREEN_W * SCREEN_H]),
+            picking: Picking::default(),
         })
     }
 
@@ -70,8 +73,9 @@ impl Session {
 
     /// Draw the current state into the 320 x 200 frame.
     pub fn draw(&mut self) -> &Screen {
-        render(
+        render_picking(
             &mut self.screen,
+            &mut self.picking,
             &self.game.level,
             &self.textures,
             self.lights.as_ref(),
@@ -84,6 +88,36 @@ impl Session {
 
     pub fn palette(&self) -> &[u32; 256] {
         &self.palette
+    }
+
+    /// A left click at screen pixel (x, y) of the 320 x 200 frame. In the
+    /// original a click in the centre region of the 3D view activates what
+    /// is under the cursor; doors are the only thing handled so far.
+    pub fn click(&mut self, x: usize, y: usize) {
+        let centre = self.game.tables.region(arena_sim::consts::RegionId::Centre);
+        let inside = (centre.x0 as usize..=centre.x1 as usize).contains(&x)
+            && (centre.y0 as usize..=centre.y1 as usize).contains(&y);
+        if !inside {
+            return;
+        }
+        if let Some((col, row)) = self.picking.cell_at(x, y) {
+            self.open_door(col, row);
+        }
+    }
+
+    /// Keyboard activation (not in the original): the door in front.
+    pub fn activate_ahead(&mut self) {
+        if let Some((col, row)) = self.game.door_ahead() {
+            self.open_door(col, row);
+        }
+    }
+
+    fn open_door(&mut self, col: usize, row: usize) {
+        match self.game.activate_door(col, row) {
+            Ok(_) => {}
+            Err(arena_sim::door::Refusal::Locked(level)) => println!("The door is locked (lock level {level})."),
+            Err(_) => {}
+        }
     }
 }
 

@@ -33,6 +33,14 @@ pub mod mf {
 /// FLOR texture numbers 12..14 are chasms (dry, wet, lava).
 pub const FLOR_CHASM: u16 = 0x0C00;
 
+/// A LOCK record: the door at (col, row) is locked at `level`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Lock {
+    pub col: u8,
+    pub row: u8,
+    pub level: u8,
+}
+
 /// A sprite line of @FLATS: `K:value` arguments.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Flat {
@@ -71,6 +79,13 @@ pub struct Level {
     /// Platform tables scaled for this level.
     pub box_bottom: [[i16; 8]; 3],
     pub box_thick: [[i16; 16]; 2],
+    /// Cells around the camera the original walks every frame (DGROUP:C394).
+    pub view_radius: u16,
+    pub locks: Vec<Lock>,
+    /// Sound ids by door kind (0xFF = none).
+    pub door_slam: [u8; 4],
+    pub door_open: [u8; 4],
+    pub door_close_start: [u8; 4],
 }
 
 fn read_flats(inf: &Inf) -> Vec<Flat> {
@@ -97,6 +112,21 @@ fn read_flats(inf: &Inf) -> Vec<Flat> {
         flats.push(fl);
     }
     flats
+}
+
+fn four(save: &SaveGame, off: usize) -> [u8; 4] {
+    [save.state[off], save.state[off + 1], save.state[off + 2], save.state[off + 3]]
+}
+
+/// LOCK records {col, row, level} (DGROUP:C624, count C6E4).
+fn read_locks(save: &SaveGame) -> Vec<Lock> {
+    let n = (save.state[sg::LOCK_COUNT] as usize).min(64);
+    (0..n)
+        .map(|i| {
+            let r = &save.state[sg::LOCKS + 3 * i..sg::LOCKS + 3 * i + 3];
+            Lock { col: r[0], row: r[1], level: r[2] }
+        })
+        .collect()
 }
 
 /// C `atoi`: optional sign and leading digits, 0 if none.
@@ -132,6 +162,11 @@ impl Level {
             box_scale: None,
             box_bottom: t.box_bottom,
             box_thick: t.box_thick,
+            view_radius: save.state_u16(sg::VIEW_RADIUS),
+            locks: read_locks(save),
+            door_slam: four(save, sg::DOOR_SLAM),
+            door_open: four(save, sg::DOOR_OPEN),
+            door_close_start: four(save, sg::DOOR_CLOSE_START),
         };
         if let Some(inf) = inf {
             lvl.flats = read_flats(inf);

@@ -112,6 +112,28 @@ impl Default for ViewParams {
     }
 }
 
+/// Which map cell each screen column's wall belongs to, for picking what
+/// the mouse points at (the original records the cell under the cursor
+/// while drawing).
+#[derive(Debug, Clone)]
+pub struct Picking {
+    columns: Vec<Option<(usize, usize, i32, i32)>>,
+}
+
+impl Default for Picking {
+    fn default() -> Self {
+        Picking { columns: vec![None; SCREEN_W] }
+    }
+}
+
+impl Picking {
+    /// The wall cell drawn at screen pixel (x, y), if any.
+    pub fn cell_at(&self, x: usize, y: usize) -> Option<(usize, usize)> {
+        let (c, r, top, bottom) = (*self.columns.get(x)?)?;
+        ((y as i32) >= top && (y as i32) <= bottom).then_some((c, r))
+    }
+}
+
 /// Where the view is drawn from.
 #[derive(Debug, Clone, Copy)]
 pub struct Camera {
@@ -148,8 +170,12 @@ fn wall_texture(v: u16) -> Option<usize> {
     let slot = |lo: u8| ((lo & 0x3F) as usize).checked_sub(1);
     match Cell::decode(v) {
         Cell::Wall { lo } => slot(lo),
-        // Drawn as plain walls for now: doors (closed), see-through walls.
-        Cell::Door { lo, .. } | Cell::SeeThrough { lo, .. } => slot(lo),
+        // A door is drawn closed until it starts opening, then not at all
+        // (the original's swing / slide / raise animations are not drawn
+        // yet; see docs/rendering.md).
+        Cell::Door { lo, open } => if open & 0x0E == 0 { slot(lo) } else { None },
+        // See-through walls are drawn as plain walls for now.
+        Cell::SeeThrough { lo, .. } => slot(lo),
         _ => None,
     }
 }
@@ -163,14 +189,29 @@ pub fn render(
     cam: &Camera,
     p: &ViewParams,
 ) {
-    render_with_depth(screen, None, level, tex, lgt, cam, p);
+    render_with_depth(screen, None, None, level, tex, lgt, cam, p);
+}
+
+/// As [`render`], also recording which cell each column shows.
+pub fn render_picking(
+    screen: &mut Screen,
+    picking: &mut Picking,
+    level: &Level,
+    tex: &Textures,
+    lgt: Option<&LightTables>,
+    cam: &Camera,
+    p: &ViewParams,
+) {
+    render_with_depth(screen, None, Some(picking), level, tex, lgt, cam, p);
 }
 
 /// As [`render`], also writing each view pixel's camera depth (for tools
 /// that calibrate the renderer; 0 where nothing was drawn).
+#[allow(clippy::too_many_arguments)]
 pub fn render_with_depth(
     screen: &mut Screen,
     mut depth_out: Option<&mut [f32]>,
+    mut picking: Option<&mut Picking>,
     level: &Level,
     tex: &Textures,
     lgt: Option<&LightTables>,
@@ -194,6 +235,7 @@ pub fn render_with_depth(
         let mut sx = if dx < 0.0 { (px - mx as f64) * ddx } else { (mx as f64 + 1.0 - px) * ddx };
         let mut sz = if dz < 0.0 { (pz - mz as f64) * ddz } else { (mz as f64 + 1.0 - pz) * ddz };
         let mut hit: Option<(usize, f64, f64)> = None; // texture, depth, u
+        let mut hit_cell = None;
         for _ in 0..256 {
             let side_x = sx < sz;
             if side_x {
@@ -217,6 +259,7 @@ pub fn render_with_depth(
                     u = 1.0 - u;
                 }
                 hit = Some((t, dist * CELL, u));
+                hit_cell = Some((mx as usize, mz as usize));
                 break;
             }
         }
@@ -228,6 +271,9 @@ pub fn render_with_depth(
             }
             None => (p.cy as i32, p.cy as i32 - 1),
         };
+        if let Some(pk) = picking.as_deref_mut() {
+            pk.columns[col] = hit_cell.map(|(c, r)| (c, r, top, bottom));
+        }
         for y in 0..VIEW_H {
             let yi = y as i32;
             let yf = y as f64;
