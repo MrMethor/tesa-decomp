@@ -340,3 +340,9 @@
 - 2026-10-14: **decision: the port moves to Rust** (Cargo workspace; simulation separate from presentation so
   a 3D renderer, modern controls and better audio can be added later as opt-in modes). The C code stays as
   the reference until each Rust module matches it, then moves to `legacy/c/`.
+- 2026-10-14: Rust workspace (`Cargo.toml`, `crates/`): `arena-data` (archive + key recovery, LZSS/LZHUF/RLE,
+  IMG/CIF, COL/LGT/SET, INF, SAVEGAME/SAVEENGN, EXE tables), `arena-sim` (cells, tables from ACD.EXE, level,
+  player movement, scenarios, game session with `FrameInput`/`Event` seams), `arenarun`, `arenatool`. Checks:
+  `tools/difftest.py` 7 of 7 scenarios match the original with the Rust runner, whose state files are
+  identical to the C runner's; `tools/xcheck.py` manifests of all 2,665 game files identical between the
+  Rust and C readers (947 IMG, 58 CIF, 93 INF, palettes, light tables, saves). Clippy clean.

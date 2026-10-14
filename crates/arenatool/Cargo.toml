@@ -1,0 +1,12 @@
+[package]
+name = "arenatool"
+description = "Checks of the Rust data readers against the game files (and against the C reference readers)"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+arena-data = { path = "../arena-data" }
+
+[lints]
+workspace = true

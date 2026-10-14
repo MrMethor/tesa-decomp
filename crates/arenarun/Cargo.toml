@@ -1,0 +1,13 @@
+[package]
+name = "arenarun"
+description = "Headless scenario runner for differential tests against the original game"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+arena-data = { path = "../arena-data" }
+arena-sim = { path = "../arena-sim" }
+
+[lints]
+workspace = true

@@ -67,5 +67,8 @@ target_link_libraries(maptool PRIVATE arena)
 add_executable(soundtool src/tools/soundtool.c)
 target_link_libraries(soundtool PRIVATE arena)
 
+add_executable(xcheck src/tools/xcheck.c)
+target_link_libraries(xcheck PRIVATE arena)
+
 add_executable(datatool src/tools/datatool.c)
 target_link_libraries(datatool PRIVATE arena)

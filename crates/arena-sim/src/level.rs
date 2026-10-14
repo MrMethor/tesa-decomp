@@ -1,0 +1,209 @@
+//! The level the player is in: map layers, sprite table and level flags.
+//! Built from a SAVEGAME slot plus the level's `.INF` description.
+
+use arena_data::inf::{Inf, Kind, Section};
+use arena_data::save::{sg, SaveGame, MAP_CELLS};
+
+use crate::consts::Tables;
+
+pub const DIM: usize = 128;
+pub const MAX_FLATS: usize = 256;
+
+/// Level flags (the original's DGROUP:C398).
+pub mod lf {
+    /// The level has an upper storey (MAP2).
+    pub const UPPER: u16 = 0x0004;
+    /// Leave the 3D view.
+    pub const LEAVE: u16 = 0x0080;
+    /// Set while climbing out of a chasm.
+    pub const NOFALL: u16 = 0x0200;
+    pub const FALLING: u16 = 0x0800;
+}
+
+/// Mode flags (DGROUP:C39A).
+pub mod mf {
+    pub const LEVITATE: u16 = 0x0001;
+    pub const SWIMMING: u16 = 0x0010;
+    pub const EXTERIOR: u16 = 0x0200;
+    pub const REENTRY: u16 = 0x0400;
+    pub const WATERWALK: u16 = 0x4000;
+    pub const NOFALL: u16 = 0x8000;
+}
+
+/// FLOR texture numbers 12..14 are chasms (dry, wet, lava).
+pub const FLOR_CHASM: u16 = 0x0C00;
+
+/// A sprite line of @FLATS: `K:value` arguments.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Flat {
+    /// `Y:` vertical offset.
+    pub y: i8,
+    pub h: u8,
+    pub n: u8,
+    /// `F:` flags; 0x01 = solid.
+    pub f: u8,
+    /// `S:` light (any other key lands here, as in the original parser).
+    pub s: u8,
+}
+
+#[derive(Clone)]
+pub struct Level {
+    pub map1: Vec<u16>,
+    /// As stored in files: high byte = texture number, low byte = flat + 1.
+    pub flor: Vec<u16>,
+    pub map2: Vec<u16>,
+    pub width: u16,
+    pub height: u16,
+    /// Level number within the `.MIF`.
+    pub index: u8,
+    pub lflags: u16,
+    pub mflags: u16,
+    pub inf_name: String,
+    pub flats: Vec<Flat>,
+    /// Wall texture slots of `*LEVELUP` / `*LEVELDOWN`.
+    pub levelup_slot: Option<usize>,
+    pub leveldown_slot: Option<usize>,
+    /// Wall height: `*CEILING h` (100 if absent or <= 32).
+    pub ceiling: i16,
+    pub open_sky: bool,
+    /// `*CEILING h s`: s when >= 32.
+    pub box_scale: Option<u16>,
+    /// Platform tables scaled for this level.
+    pub box_bottom: [[i16; 8]; 3],
+    pub box_thick: [[i16; 16]; 2],
+}
+
+fn read_flats(inf: &Inf) -> Vec<Flat> {
+    let mut flats = Vec::new();
+    for e in &inf.entries {
+        if e.section != Section::Flats || e.kind != Kind::File || flats.len() >= MAX_FLATS {
+            continue;
+        }
+        let mut fl = Flat::default();
+        for tok in e.rest.split([' ', '\t']).filter(|t| !t.is_empty()) {
+            let b = tok.as_bytes();
+            if b.len() < 2 || b[1] != b':' {
+                continue;
+            }
+            let v = atoi(&tok[2..]);
+            match b[0].to_ascii_uppercase() {
+                b'Y' => fl.y = v as i8,
+                b'H' => fl.h = v as u8,
+                b'N' => fl.n = v as u8,
+                b'F' => fl.f = v as u8,
+                _ => fl.s = v as u8,
+            }
+        }
+        flats.push(fl);
+    }
+    flats
+}
+
+/// C `atoi`: optional sign and leading digits, 0 if none.
+fn atoi(s: &str) -> i32 {
+    let s = s.trim_start();
+    let (neg, digits) = match s.as_bytes().first() {
+        Some(b'-') => (true, &s[1..]),
+        Some(b'+') => (false, &s[1..]),
+        _ => (false, s),
+    };
+    let end = digits.find(|c: char| !c.is_ascii_digit()).unwrap_or(digits.len());
+    let v: i64 = digits[..end].parse().unwrap_or(0);
+    (if neg { -v } else { v }) as i32
+}
+
+impl Level {
+    pub fn from_save(t: &Tables, save: &SaveGame, inf: Option<&Inf>) -> Level {
+        let mut lvl = Level {
+            map1: save.map1.clone(),
+            flor: save.flor.clone(),
+            map2: save.map2.clone(),
+            width: save.state_u16(sg::WIDTH),
+            height: save.state_u16(sg::HEIGHT),
+            index: save.state[sg::LEVEL],
+            lflags: save.state_u16(sg::FLAGS),
+            mflags: save.state_u16(sg::MODE),
+            inf_name: save.inf_name(),
+            flats: Vec::new(),
+            levelup_slot: None,
+            leveldown_slot: None,
+            ceiling: 100,
+            open_sky: false,
+            box_scale: None,
+            box_bottom: t.box_bottom,
+            box_thick: t.box_thick,
+        };
+        if let Some(inf) = inf {
+            lvl.flats = read_flats(inf);
+            lvl.read_ceiling(inf);
+            lvl.levelup_slot = inf.directive_slot("LEVELUP");
+            lvl.leveldown_slot = inf.directive_slot("LEVELDOWN");
+        }
+        lvl.scale_boxes();
+        debug_assert_eq!(lvl.map1.len(), MAP_CELLS);
+        lvl
+    }
+
+    /// `*CEILING h [s [f]]` (1000:ef7a).
+    fn read_ceiling(&mut self, inf: &Inf) {
+        for e in inf.entries.iter().filter(|e| e.kind == Kind::Directive && e.name == "CEILING") {
+            if let Some(&h) = e.args.first().filter(|&&h| h > 32) {
+                self.ceiling = h as i16;
+            }
+            if let Some(&s) = e.args.get(1).filter(|&&s| s >= 32) {
+                self.box_scale = Some(s as u16);
+            }
+            self.open_sky = e.args.get(2).is_some_and(|&f| f != 0);
+        }
+    }
+
+    /// Platform tables: restored from the clean copy for every level, then
+    /// scaled by 192/256 in exterior mode and by s/256 for `*CEILING h s`
+    /// (1000:ec17, 1000:efab).
+    fn scale_boxes(&mut self) {
+        let exterior = self.mflags & mf::EXTERIOR != 0;
+        let scale = self.box_scale;
+        let f = |v: &mut i16| {
+            let mut x = *v as u16 as u32;
+            if exterior {
+                x = ((x * 0xC0) >> 8) & 0xFFFF;
+            }
+            if let Some(s) = scale {
+                x = ((x * s as u32) >> 8) & 0xFFFF;
+            }
+            *v = x as u16 as i16;
+        };
+        self.box_bottom.iter_mut().flatten().for_each(f);
+        self.box_thick.iter_mut().flatten().for_each(f);
+    }
+
+    /// Platform bottom and top for a platform cell value (1000:fcb9).
+    pub fn box_heights(&self, v: u16) -> (i16, i16) {
+        let hi = (v >> 8) as usize;
+        let set = if self.lflags & lf::UPPER != 0 {
+            if self.mflags & mf::EXTERIOR != 0 { 2 } else { 1 }
+        } else {
+            0
+        };
+        let bottom = self.box_bottom[set][hi & 7];
+        let tset = usize::from(self.mflags & mf::EXTERIOR != 0);
+        let top = self.box_thick[tset][(hi >> 3) & 15].wrapping_add(bottom);
+        (bottom, top)
+    }
+
+    /// Cell at a byte offset into a 64 KB layer segment, as the original
+    /// addresses neighbours; offsets past the 128 x 128 layer read 0.
+    pub fn cell_at(layer: &[u16], byte_offset: i32) -> u16 {
+        let off = (byte_offset & 0xFFFF) as usize;
+        layer.get(off >> 1).copied().filter(|_| off < MAP_CELLS * 2).unwrap_or(0)
+    }
+
+    pub fn flat(&self, index: u8) -> Option<&Flat> {
+        self.flats.get(index as usize)
+    }
+}
+
+/// Byte offset of the cell containing (x, z) in a 128 x 128 layer.
+pub fn cell_offset(x: u16, z: u16) -> i32 {
+    (((z >> 7) as i32) << 8) + (((x >> 7) as i32) << 1)
+}

@@ -1,0 +1,12 @@
+[package]
+name = "arena-sim"
+description = "The game rules of the Arena port: deterministic, integer-only, stepped one original 3D-loop frame at a time"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+arena-data = { path = "../arena-data" }
+
+[lints]
+workspace = true

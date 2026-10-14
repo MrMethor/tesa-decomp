@@ -3,9 +3,10 @@ original game (tools/oracle.py, results cached in run/oracle/) and in the
 port (build/arenarun.exe, results in run/port/), and the states are compared
 (tools/statecmp.py).
 
-    python -I difftest.py [--refresh] [--fields x,y,z,angle,level] [name ...]
+    python -I difftest.py [--refresh] [--c] [--fields x,y,z,angle,level] [name ...]
 
---refresh replays the original even when a cached result exists (a cached
+--c tests the C reference port (build/arenarun.exe) instead of the Rust one
+(target/release/arenarun.exe). --refresh replays the original even when a cached result exists (a cached
 result is also replayed when the scenario file is newer). The cached
 original states are observations of the original game and stay in run/,
 which is not committed.
@@ -23,7 +24,10 @@ ROOT = os.path.abspath(os.path.join(HERE, ".."))
 SCN_DIR = os.path.join(ROOT, "tests", "scenarios")
 ORACLE_DIR = os.path.join(ROOT, "run", "oracle")
 PORT_DIR = os.path.join(ROOT, "run", "port")
-ARENARUN = os.path.join(ROOT, "build", "arenarun.exe")
+# The port under test: the Rust runner by default, the C reference with --c.
+ARENARUN_RUST = os.path.join(ROOT, "target", "release", "arenarun.exe")
+ARENARUN_C = os.path.join(ROOT, "build", "arenarun.exe")
+ARENARUN = ARENARUN_RUST
 DATA_DIR = os.path.join(ROOT, "run", "ARENA")
 EXE = os.path.join(ROOT, "bin", "ACD_unpacked.EXE")
 
@@ -47,8 +51,12 @@ def run_port(scn, out):
 
 
 def main():
+    global ARENARUN
     args = sys.argv[1:]
     refresh = "--refresh" in args
+    if "--c" in args:
+        ARENARUN = ARENARUN_C
+    print("port under test:", os.path.relpath(ARENARUN, ROOT))
     fields = statecmp.parse_fields(statecmp.DEFAULT_FIELDS)
     if "--fields" in args:
         fields = statecmp.parse_fields(args[args.index("--fields") + 1])

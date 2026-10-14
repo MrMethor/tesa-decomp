@@ -14,3 +14,4 @@ decomp/notes/*.txt
 __pycache__/
 *.pyc
 *.conf
+/target/
