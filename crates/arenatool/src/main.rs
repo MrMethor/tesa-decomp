@@ -138,6 +138,58 @@ fn manifest(dir: &str, out: &str) -> Result<usize, String> {
             }
         } else if has_ext(name, "INF") {
             text.push_str(&inf_line(name, &buf));
+        } else if has_ext(name, "MIF") {
+            match arena_data::mif::Mif::parse(buf.clone()) {
+                Ok(m) => {
+                    let mut h = FNV0;
+                    for (l, chunks) in m.levels.iter().enumerate() {
+                        for c in chunks {
+                            h = fnv(h, &c.tag);
+                            if matches!(&c.tag, b"FLOR" | b"MAP1" | b"MAP2") {
+                                match m.layer_cells(c) {
+                                    Some(cells) => h = fnv_u16(h, &cells),
+                                    None => h = fnv(h, b"ERR"),
+                                }
+                            } else {
+                                h = fnv(h, m.chunk_data(c));
+                            }
+                        }
+                        let _ = l;
+                    }
+                    let _ = writeln!(
+                        text,
+                        "MIF {name} {} {} {} {} {} {h:016x}",
+                        m.levels.len(),
+                        m.width,
+                        m.height,
+                        m.trailing,
+                        m.levl_mismatch
+                    );
+                }
+                Err(_) => {
+                    let _ = writeln!(text, "MIF {name} ERR");
+                }
+            }
+        } else if name.starts_with("STATES.") {
+            match arena_data::save::States::parse(&buf) {
+                Ok(s) => {
+                    let mut h = FNV0;
+                    for l in &s.levels {
+                        h = fnv(h, &[l.trigs.len() as u8]);
+                        for t in &l.trigs {
+                            h = fnv(h, t);
+                        }
+                        h = fnv(h, &[l.locks.len() as u8]);
+                        for k in &l.locks {
+                            h = fnv(h, k);
+                        }
+                    }
+                    let _ = writeln!(text, "STATES {name} {h:016x}");
+                }
+                Err(_) => {
+                    let _ = writeln!(text, "STATES {name} ERR");
+                }
+            }
         } else if name.starts_with("SAVEGAME.") {
             match SaveGame::parse(&buf) {
                 Ok(sg) => {
@@ -222,11 +274,58 @@ fn render(args: &[String]) -> Result<String, String> {
     Ok(format!("wrote {prefix}.bin / .png"))
 }
 
+/// Stairs of every level of a .MIF: each level's .INF, its *LEVELUP /
+/// *LEVELDOWN wall slots and the cells that carry them.
+fn stairs(dir: &str, name: &str) -> Result<String, String> {
+    let archive = Archive::open(dir).map_err(|e| format!("{dir}: {e}"))?;
+    let mif = arena_data::mif::Mif::load(&archive, name).map_err(|e| e.to_string())?;
+    let mut out = format!("{name}: {} levels, {} x {}
+", mif.levels.len(), mif.width, mif.height);
+    for l in 0..mif.levels.len() {
+        let info = mif.string(l, b"INFO").unwrap_or_default();
+        let inf = Inf::load(&archive, &info.to_ascii_uppercase()).ok();
+        let up = inf.as_ref().and_then(|i| i.directive_slot("LEVELUP"));
+        let down = inf.as_ref().and_then(|i| i.directive_slot("LEVELDOWN"));
+        let map1 = mif.layer_128(l, b"MAP1", 0).unwrap_or_default();
+        let cells = |slot: Option<usize>| -> String {
+            let Some(s) = slot else { return "-".into() };
+            map1.iter()
+                .enumerate()
+                .filter(|&(_, &v)| v != 0 && v & 0x8000 == 0 && v & 0xFF == v >> 8 && (v & 0xFF) as usize == s)
+                .map(|(i, _)| format!("({},{})", i % 128, i / 128))
+                .collect::<Vec<_>>()
+                .join(" ")
+        };
+        let (cu, cd) = (cells(up), cells(down));
+        let _ = writeln!(out, "  level {l}: {info} up slot {up:?} at {cu}; down slot {down:?} at {cd}");
+    }
+    Ok(out)
+}
+
+/// MAP1, FLOR and MAP2 of one level laid out as the game holds them (128 x
+/// 128 `u16` each, MAP1 / MAP2 padded with `pad`, FLOR with 0), for building
+/// test saves (tools/makesave.py).
+fn layers(dir: &str, name: &str, level: &str, pad: &str, out: &str) -> Result<String, String> {
+    let archive = Archive::open(dir).map_err(|e| format!("{dir}: {e}"))?;
+    let mif = arena_data::mif::Mif::load(&archive, name).map_err(|e| e.to_string())?;
+    let level: usize = level.parse().map_err(|_| "bad level")?;
+    let pad = u16::from_str_radix(pad.trim_start_matches("0x"), 16).map_err(|_| "bad pad")?;
+    let mut bytes = Vec::new();
+    for (tag, p) in [(b"MAP1", pad), (b"FLOR", 0), (b"MAP2", pad)] {
+        let layer = mif.layer_128(level, tag, p).unwrap_or_else(|| vec![p; 128 * 128]);
+        bytes.extend(layer.iter().flat_map(|v| v.to_le_bytes()));
+    }
+    std::fs::write(out, bytes).map_err(|e| e.to_string())?;
+    Ok(format!("wrote {out}"))
+}
+
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let result = match args.as_slice() {
         [cmd, dir, out] if cmd == "manifest" => manifest(dir, out).map(|n| format!("{n} files")),
         [cmd, rest @ ..] if cmd == "render" => render(rest),
+        [cmd, dir, name] if cmd == "stairs" => stairs(dir, name),
+        [cmd, dir, name, level, pad, out] if cmd == "layers" => layers(dir, name, level, pad, out),
         _ => Err("usage: arenatool manifest <data dir> <out.txt>
        arenatool render <data dir> <exe> <slot> <x> <z> <angle> <out prefix> [key=value ...]".into()),
     };

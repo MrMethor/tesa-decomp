@@ -11,6 +11,7 @@ pub mod compress;
 pub mod exe;
 pub mod img;
 pub mod inf;
+pub mod mif;
 pub mod palette;
 pub mod save;
 

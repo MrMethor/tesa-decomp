@@ -362,3 +362,11 @@
   Harness: scenarios can `watch` map cells and `set_cell` (open a door as a click would); the frame boundary
   analysis put the port's door update after movement. 9 of 9 scenarios match. In the game: left click on a
   door in the centre of the view opens it, E opens the door ahead (addition).
+- 2026-10-14: stairs (`docs/movement.md`): a blocked wall whose slot is *LEVELUP / *LEVELDOWN changes level
+  when the camera cell's neighbour in the (quarter-turn) facing holds the same wall (1000:f76f, fdaa); the
+  new level is loaded from the location's .MIF mid-collision, the facing turns around, the ramp stops.
+  Rust: `.MIF` and STATES readers (manifests identical to C on 550 .MIF and 7 STATES files), `Location`
+  with every level and .INF, level loading, `LevelChanged` / `LeaveLocation` / `MenuWall` events; the game
+  reloads textures on a level change. Test fixture: `tools/makesave.py` builds a save slot in the working
+  copy at any level of any .MIF (slot 9: a three-level dungeon next to its stairs down); `stairs_down` matches
+  the original. 10 of 10 scenarios match.

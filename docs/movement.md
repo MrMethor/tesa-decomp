@@ -157,6 +157,30 @@ and keeps the first free one; if none is free the player stays (1000:f478).
 So pushing into a wall at an angle slides along it at the speed of the
 parallel component. (C)
 
+## Stairs and menu walls
+
+When a wall blocks a candidate position while the player stands (y >= 60),
+the wall's texture slot is checked first (1000:f76f):
+
+- **`*LEVELUP` / `*LEVELDOWN` wall** (slot from the level's `.INF`): if the
+  neighbour of the camera's cell in the facing direction, rounded to a
+  quarter turn (table DGROUP:E384), holds the same wall (1000:fdaa), and no
+  stairs were taken earlier in this step, the level changes: up = level
+  index - 1, down = + 1 (down is refused in mode flag 0x0100). Up from the
+  first level or down past the last (DGROUP:C355, MHDR +0x13) leaves the
+  location instead (hook DGROUP:CD4E; not in the port yet).
+- The level change happens inside the collision test: the current level's
+  locks and triggers are kept in STATES (hook DGROUP:CD6E), the new level
+  is loaded from the location's `.MIF` (1000:ebb5: layers, `.INF`, LOCK
+  records), the facing turns around (+256), and after the level change
+  hook (DGROUP:C3B8 = 1000:44d7) the walking ramp is 0. The position stays:
+  dungeon levels are stacked cell for cell. The remaining slide candidates
+  of the step are tested on the new level, where the stairs back block them.
+- **`*MENU n` wall**: if the facing is within 0x10 of a quarter turn
+  (1000:f913), the wall's destination is requested (DGROUP:CB6A); not in
+  the port yet.
+- In every case the wall blocks. (C: `stairs_down`)
+
 ## Height
 
 Every frame the target height is chosen from the cell under the player
@@ -177,9 +201,7 @@ target sets y to it and resets the fall step. (c)
 
 ## Open
 
-- Walking into a `*LEVELUP` / `*LEVELDOWN` wall while facing it within
-  about 22 degrees of straight on starts a level change (1000:f76f, f913);
-  the port treats those walls as plain walls for now.
+- Leaving a location (stairs out of a dungeon) and *MENU destinations.
 - Climbing out of a chasm (1000:f656-f9c3) and the 6-frame grace timer
   after it (DGROUP:E39F).
 - Creature collision (hook DGROUP:CD6A = 1000:4009) and doors opening.

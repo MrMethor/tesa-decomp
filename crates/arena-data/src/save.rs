@@ -26,6 +26,10 @@ pub mod sg {
     pub const LIGHT_COUNT: usize = 0x186;
     pub const LIGHTS: usize = 0x188;
     pub const LEVEL_NAME: usize = 0x78C;
+    /// Name of the location's .MIF (DGROUP:C37F).
+    pub const MIF_NAME: usize = 0x877;
+    /// Number of levels of the location (DGROUP:C355, MHDR +0x13).
+    pub const LEVEL_COUNT: usize = 0x84D;
     pub const INF_NAME: usize = 0x7AD;
     pub const MHDR: usize = 0x83A;
     pub const WIDTH: usize = 0x84F;
@@ -109,6 +113,15 @@ impl SaveGame {
         u16_at(&self.state, off)
     }
 
+    /// Name of the location's `.MIF` file, upper-cased.
+    pub fn mif_name(&self) -> String {
+        self.state[sg::MIF_NAME..sg::MIF_NAME + 13]
+            .iter()
+            .take_while(|&&b| b != 0)
+            .map(|&b| (b as char).to_ascii_uppercase())
+            .collect()
+    }
+
     /// Name of the level's `.INF` file, upper-cased.
     pub fn inf_name(&self) -> String {
         self.state[sg::INF_NAME..sg::INF_NAME + 13]
@@ -159,6 +172,46 @@ impl SaveEngn {
 
     pub fn load(archive: &Archive, slot: u32) -> Result<SaveEngn, DataError> {
         SaveEngn::parse(&archive.read(&format!("SAVEENGN.{slot:02}"))?)
+    }
+}
+
+/// STATES.<slot> (28800 bytes, writer 392b:095e): per level of the current
+/// location, the TRIG and LOCK records as last left (same shapes as the
+/// `.MIF` chunks): `u8 trig_count, trig[64][4], u8 lock_count, lock[64][3]`.
+pub const STATES_LEVELS: usize = 64;
+pub const STATES_RECORD: usize = 450;
+
+#[derive(Debug, Clone)]
+pub struct LevelState {
+    pub trigs: Vec<[u8; 4]>,
+    pub locks: Vec<[u8; 3]>,
+}
+
+pub struct States {
+    pub levels: Vec<LevelState>,
+}
+
+impl States {
+    pub fn parse(buf: &[u8]) -> Result<States, DataError> {
+        if buf.len() != STATES_LEVELS * STATES_RECORD {
+            return crate::format_err("STATES: wrong size");
+        }
+        let levels = buf
+            .chunks(STATES_RECORD)
+            .map(|r| {
+                let nt = (r[0] as usize).min(64);
+                let nl = (r[257] as usize).min(64);
+                LevelState {
+                    trigs: (0..nt).map(|i| [r[1 + 4 * i], r[2 + 4 * i], r[3 + 4 * i], r[4 + 4 * i]]).collect(),
+                    locks: (0..nl).map(|i| [r[258 + 3 * i], r[259 + 3 * i], r[260 + 3 * i]]).collect(),
+                }
+            })
+            .collect();
+        Ok(States { levels })
+    }
+
+    pub fn load(archive: &Archive, slot: u32) -> Result<States, DataError> {
+        States::parse(&archive.read(&format!("STATES.{slot:02}"))?)
     }
 }
 

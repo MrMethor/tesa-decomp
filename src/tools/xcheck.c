@@ -21,6 +21,7 @@
 #include "gfx/img.h"
 #include "gfx/palette.h"
 #include "world/inf.h"
+#include "world/mif.h"
 
 typedef unsigned long long u64;
 
@@ -203,6 +204,54 @@ int main(int argc, char **argv)
 				fprintf(out, "LGT %s ERR\n", name);
 		} else if (has_ext(name, "INF")) {
 			inf_line(out, name, buf, len);
+		} else if (has_ext(name, "MIF")) {
+			arena_mif *m = malloc(sizeof *m);
+			uint8_t   *copy = malloc(len ? len : 1);
+			memcpy(copy, buf, len);
+			if (m && mif_from_bytes(copy, len, m) == 0) {
+				u64 h = FNV0;
+				int l, k;
+				for (l = 0; l < m->nlevels; l++) {
+					for (k = 0; k < m->levels[l].nchunks; k++) {
+						const mif_chunk *c = &m->levels[l].chunks[k];
+						h = fnv(h, c->tag, 4);
+						if (!strcmp(c->tag, "FLOR") || !strcmp(c->tag, "MAP1") || !strcmp(c->tag, "MAP2")) {
+							unsigned  n = mif_layer_cells(c);
+							uint16_t *cells = n ? malloc(n * 2) : NULL;
+							if (cells && mif_layer(c, cells) == 0)
+								h = fnv(h, cells, n * 2);
+							else
+								h = fnv(h, "ERR", 3);
+							free(cells);
+						} else {
+							h = fnv(h, c->data, c->length);
+						}
+					}
+				}
+				fprintf(out, "MIF %s %d %u %u %d %d %016llx\n", name, m->nlevels, m->width, m->height,
+				        m->trailing, m->levl_mismatch, h);
+				mif_free(m);
+			} else {
+				fprintf(out, "MIF %s ERR\n", name);
+			}
+			free(m);
+		} else if (has_prefix(name, "STATES.")) {
+			static arena_states st;
+			if (states_load(name, &st) == 0) {
+				u64 h = FNV0;
+				int l;
+				for (l = 0; l < STATES_LEVELS; l++) {
+					uint8_t n = st.level[l].trig_count > 64 ? 64 : st.level[l].trig_count;
+					h = fnv(h, &n, 1);
+					h = fnv(h, st.level[l].trig, (size_t)n * 4);
+					n = st.level[l].lock_count > 64 ? 64 : st.level[l].lock_count;
+					h = fnv(h, &n, 1);
+					h = fnv(h, st.level[l].lock, (size_t)n * 3);
+				}
+				fprintf(out, "STATES %s %016llx\n", name, h);
+			} else {
+				fprintf(out, "STATES %s ERR\n", name);
+			}
 		} else if (has_prefix(name, "SAVEGAME.")) {
 			static arena_savegame sg;
 			if (savegame_load(name, &sg) == 0) {

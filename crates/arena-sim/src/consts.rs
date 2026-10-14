@@ -21,6 +21,8 @@ const DG_FALL: usize = 0xE8BC;
 const DG_BOB: usize = 0xE824;
 const DG_SWIM_BOB: usize = 0x7A6E;
 const DG_REGIONS: usize = 0x79D8;
+/// Byte offset of the neighbouring cell in each of the 4 facing directions.
+const DG_FACING_CELL: usize = 0xE384;
 
 /// Collision masks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -76,6 +78,8 @@ pub struct Tables {
     pub bob: [i16; 32],
     pub swim_bob: [i16; 8],
     pub regions: [Region; 9],
+    /// Cell offset of the neighbour in facing direction (angle + 64) >> 7.
+    pub facing_cell: [i16; 4],
 }
 
 fn words<const N: usize>(b: &[u8]) -> [i16; N] {
@@ -110,6 +114,7 @@ impl Tables {
             bob: words(exe.dgroup_bytes(DG_BOB, 64)?),
             swim_bob: words(exe.dgroup_bytes(DG_SWIM_BOB, 16)?),
             regions,
+            facing_cell: words(exe.dgroup_bytes(DG_FACING_CELL, 8)?),
         };
         // Sanity: a quarter turn is the sine maximum, the centre neighbour has
         // no offset.

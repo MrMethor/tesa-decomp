@@ -23,10 +23,11 @@ use arena_data::save::SaveGame;
 use arena_data::Archive;
 use arena_render_classic::view::{render_picking, Camera, Picking, Textures, ViewParams};
 use arena_render_classic::{Screen, SCREEN_W, SCREEN_H, VIEW_H};
-use arena_sim::{FrameInput, Game, KeyState};
+use arena_sim::{Event, FrameInput, Game, KeyState};
 
 /// Everything the game loop needs.
 pub struct Session {
+    archive: Archive,
     game: Game,
     textures: Textures,
     lights: Option<LightTables>,
@@ -55,6 +56,7 @@ impl Session {
         let save = SaveGame::load(&archive, slot).map_err(|e| e.to_string())?;
         let interface = save.screen[VIEW_H * SCREEN_W..].to_vec();
         Ok(Session {
+            archive,
             game,
             textures,
             lights,
@@ -68,7 +70,19 @@ impl Session {
 
     /// Advance one original frame with the keys held now.
     pub fn step(&mut self, keys: KeyState) {
-        self.game.step(&FrameInput::Classic(keys));
+        for ev in self.game.step(&FrameInput::Classic(keys)) {
+            match ev {
+                Event::LevelChanged { .. } => self.reload_textures(),
+                Event::LeaveLocation => println!("(Leaving the location is not in the port yet.)"),
+                _ => {}
+            }
+        }
+    }
+
+    fn reload_textures(&mut self) {
+        if let Ok(inf) = Inf::load(&self.archive, &self.game.level.inf_name) {
+            self.textures = Textures::load(&self.archive, &inf);
+        }
     }
 
     /// Draw the current state into the 320 x 200 frame.

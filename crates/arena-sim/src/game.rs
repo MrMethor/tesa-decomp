@@ -3,14 +3,15 @@
 
 use arena_data::exe::Exe;
 use arena_data::inf::Inf;
-use arena_data::save::{SaveEngn, SaveGame};
+use arena_data::mif::Mif;
+use arena_data::save::{SaveEngn, SaveGame, States};
 use arena_data::{Archive, DataError};
 
 use crate::consts::Tables;
 use crate::fixed::mul_hi;
-use crate::level::Level;
+use crate::level::{cell_offset, Level, Location};
 use crate::door;
-use crate::player::{self, Keys, Player};
+use crate::player::{self, Keys, Player, StepCtx};
 
 /// The original's PIT tick rate; its 3D loop waits two ticks per frame.
 pub const TICK_HZ: f64 = 1_193_182.0 / 65536.0;
@@ -68,6 +69,13 @@ impl Default for FrameInput {
 pub enum Event {
     /// Play sound `id` (the original's sound list) at map cell (col, row).
     Sound { id: u8, col: u8, row: u8 },
+    /// The player took stairs to another level of the location.
+    LevelChanged { level: u8 },
+    /// Stairs out of the location (up from the first level, down from the
+    /// last): the original leaves to the outside here; not modelled yet.
+    LeaveLocation,
+    /// A *MENU wall was walked into (its destination is not modelled yet).
+    MenuWall { index: u8 },
 }
 
 pub struct Game {
@@ -76,6 +84,8 @@ pub struct Game {
     pub player: Player,
     /// Frames since the session started.
     pub frame: u32,
+    /// The location's other levels (None if its .MIF could not be read).
+    pub location: Option<Location>,
 }
 
 impl Game {
@@ -87,10 +97,23 @@ impl Game {
         let inf = Inf::load(archive, &save.inf_name())?;
         let level = Level::from_save(&tables, &save, Some(&inf));
         let player = Player::from_save(&save, engn.as_ref());
-        let mut game = Game { tables, level, player, frame: 0 };
+        let location = Self::load_location(archive, &save, slot);
+        let mut game = Game { tables, level, player, frame: 0, location };
         // The first loop iteration's cell walk runs before its movement step.
         game.update_doors(&mut Vec::new());
         Ok(game)
+    }
+
+    fn load_location(archive: &Archive, save: &SaveGame, slot: u32) -> Option<Location> {
+        let mif = Mif::load(archive, &save.mif_name()).ok()?;
+        let infs = (0..mif.levels.len())
+            .map(|l| mif.string(l, b"INFO").and_then(|n| Inf::load(archive, &n.to_ascii_uppercase()).ok()))
+            .collect();
+        let states = States::load(archive, slot).map(|s| s.levels).unwrap_or_default();
+        // Outside the level the layers hold the texture-memory segment; a
+        // save keeps it in its padding.
+        let pad = save.map1[127 * 128 + 127];
+        Some(Location { mif, infs, states, pad })
     }
 
     /// Advance one original 3D-loop frame. A step runs from one movement
@@ -100,7 +123,9 @@ impl Game {
     pub fn step(&mut self, input: &FrameInput) -> Vec<Event> {
         let mut events = Vec::new();
         let FrameInput::Classic(keys) = input;
-        player::frame(&mut self.player, &mut self.level, &self.tables, &keys.movement(), self.frame);
+        let (cx, cz) = self.camera();
+        let mut ctx = StepCtx { cam_cell: cell_offset(cx, cz), location: self.location.as_mut(), events: &mut events };
+        player::frame(&mut self.player, &mut self.level, &self.tables, &keys.movement(), self.frame, &mut ctx);
         self.frame = self.frame.wrapping_add(1);
         self.update_doors(&mut events);
         events

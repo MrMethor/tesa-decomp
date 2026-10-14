@@ -1,0 +1,12 @@
+# Take the stairs down to the next level and walk on.
+# Needs test slot 9: python -I tools/makesave.py 2 9 39300577.MIF 0 4800 4928 256 "stairs test"
+# (level 0 of a three-level dungeon, in the corridor south of its stairs down,
+# facing north).
+save 9
+wait 2
+hold up 20
+check after_stairs
+wait 3
+hold up 15
+check walked_on
+end

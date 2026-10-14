@@ -6,7 +6,8 @@ use arena_data::save::{se1, sg, SaveEngn, SaveGame};
 use crate::cell::Cell;
 use crate::consts::{RegionId, Stamp, Tables};
 use crate::fixed::{frac16, mul_hi, scale};
-use crate::level::{cell_offset, lf, mf, Level, FLOR_CHASM};
+use crate::game::Event;
+use crate::level::{cell_offset, lf, mf, Level, Location, FLOR_CHASM};
 
 /// Height of a player standing on the floor.
 pub const STAND_Y: i16 = 60;
@@ -170,32 +171,100 @@ enum PosTest {
     Blocked,
 }
 
-struct Movement<'a> {
+/// What a frame of movement needs besides the player and the level.
+pub struct StepCtx<'a> {
+    /// Byte offset of the camera's cell (the original's DGROUP:CB90, set by
+    /// the cell walk before the movement step).
+    pub cam_cell: i32,
+    /// The location's levels, for stairs (None: stairs just block).
+    pub location: Option<&'a mut Location>,
+    pub events: &'a mut Vec<Event>,
+}
+
+struct Movement<'a, 'c> {
     p: &'a mut Player,
     lvl: &'a mut Level,
     t: &'a Tables,
+    ctx: &'a mut StepCtx<'c>,
+    /// Stairs already taken in this step (DGROUP:E39E, cleared per step).
+    stairs_used: bool,
 }
 
-impl<'a> Movement<'a> {
-    fn new(p: &'a mut Player, lvl: &'a mut Level, t: &'a Tables) -> Self {
-        Movement { p, lvl, t }
+impl<'a, 'c> Movement<'a, 'c> {
+    fn new(p: &'a mut Player, lvl: &'a mut Level, t: &'a Tables, ctx: &'a mut StepCtx<'c>) -> Self {
+        Movement { p, lvl, t, ctx, stairs_used: false }
     }
 
     /// "Sliding": the candidate's grid square decides.
     fn test_position(&mut self, x: u16, z: u16) -> PosTest {
         let code = collision_code(self.lvl, self.t, x, z, self.p.y);
-        // Stairs (walking into a *LEVELUP / *LEVELDOWN wall) and climbing out
-        // of a chasm are not modelled yet: such walls just block.
+        // A wall: it blocks, but stairs and menu walls act first. (Climbing
+        // out of a chasm is not modelled yet.)
         if code != 0 && code & 0x80 == 0 && self.p.y >= STAND_Y {
+            self.wall_contact(code);
             return PosTest::Blocked;
         }
         self.lvl.lflags &= !lf::NOFALL;
         if code != 0 { PosTest::Blocked } else { PosTest::Free }
     }
 
+    /// "Stairs" (1000:f76f): walking into a *LEVELUP / *LEVELDOWN wall that
+    /// is also the neighbour of the camera's cell in the facing direction
+    /// changes level; a *MENU wall faced within 22 degrees of a cardinal
+    /// direction requests its destination.
+    fn wall_contact(&mut self, code: u8) {
+        let is = |slot: Option<usize>| slot == Some(code as usize);
+        if is(self.lvl.levelup_slot) {
+            if !self.stairs_used && self.facing_matches(code) {
+                self.change_level(-1);
+            }
+        } else if is(self.lvl.leveldown_slot) {
+            if !self.stairs_used && self.facing_matches(code) && self.lvl.mflags & 0x0100 == 0 {
+                self.change_level(1);
+            }
+        } else if let Some(n) = self.lvl.menu_slots.iter().position(|&s| is(s))
+            && near_cardinal(self.p.angle)
+        {
+            self.ctx.events.push(Event::MenuWall { index: n as u8 });
+        }
+    }
+
+    /// The neighbour of the camera's cell in the facing direction (rounded
+    /// to a quarter turn) carries the same wall (1000:fdaa).
+    fn facing_matches(&self, code: u8) -> bool {
+        let dir = (((self.p.angle + 0x40) & 0x1FF) >> 7) as usize;
+        let cell = self.ctx.cam_cell + self.t.facing_cell[dir] as i32;
+        (Level::cell_at(&self.lvl.map1, cell) & 0xFF) as u8 == code
+    }
+
+    fn change_level(&mut self, delta: i32) {
+        let Some(loc) = self.ctx.location.as_deref_mut() else { return };
+        let cur = self.lvl.index as i32;
+        if delta < 0 && cur == 0 {
+            self.ctx.events.push(Event::LeaveLocation);
+            return;
+        }
+        // Keep the level's locks as left (STATES, hook DGROUP:CD6E).
+        if let Some(st) = loc.states.get_mut(cur as usize) {
+            st.locks = self.lvl.locks.iter().map(|l| [l.col, l.row, l.level]).collect();
+        }
+        let next = cur + delta;
+        if next >= self.lvl.level_count as i32 {
+            self.ctx.events.push(Event::LeaveLocation);
+            return;
+        }
+        *self.lvl = self.lvl.load_from(self.t, loc, next as u8);
+        self.stairs_used = true;
+        self.p.angle = (self.p.angle + 256) & 511;
+        // After the level change hook DGROUP:C3B8 (1000:44d7) stops the ramp.
+        self.p.accel = 0;
+        self.ctx.events.push(Event::LevelChanged { level: next as u8 });
+    }
+
     /// One step of `dist` along `angle`: try the full move, then x only,
     /// then z only (1000:f478).
     fn step(&mut self, dist: u16, angle: u16) {
+        self.stairs_used = false;
         let (ox, oz) = (self.p.x, self.p.z);
         let d = (dist as i16).wrapping_mul(2);
         let nx = ox.wrapping_add(mul_hi(d, self.t.sin(angle)) as u16);
@@ -393,6 +462,12 @@ impl<'a> Movement<'a> {
     }
 }
 
+/// Facing within 0x10 of a quarter turn (1000:f913).
+fn near_cardinal(angle: u16) -> bool {
+    let a = angle & 511;
+    a < 0x10 || (0x70..0x90).contains(&a) || (0xF0..0x110).contains(&a) || (0x170..0x190).contains(&a) || a >= 0x1F0
+}
+
 /// Falling below the floor pulls the position 16 units per frame towards
 /// the middle of the cell.
 fn centre_pull(v: u16) -> u16 {
@@ -408,8 +483,8 @@ fn centre_pull(v: u16) -> u16 {
 
 /// One 3D-loop frame of player movement. `frame` is the frame counter; its
 /// parity times the falling speed-up.
-pub fn frame(p: &mut Player, lvl: &mut Level, t: &Tables, keys: &Keys, frame: u32) {
-    let mut m = Movement::new(p, lvl, t);
+pub fn frame(p: &mut Player, lvl: &mut Level, t: &Tables, keys: &Keys, frame: u32, ctx: &mut StepCtx) {
+    let mut m = Movement::new(p, lvl, t, ctx);
     // The keyboard is not read while falling; the steering flag then keeps
     // its value from the last frame that read it.
     if m.lvl.lflags & lf::FALLING == 0 {

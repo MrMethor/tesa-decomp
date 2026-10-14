@@ -2,7 +2,8 @@
 //! Built from a SAVEGAME slot plus the level's `.INF` description.
 
 use arena_data::inf::{Inf, Kind, Section};
-use arena_data::save::{sg, SaveGame, MAP_CELLS};
+use arena_data::mif::Mif;
+use arena_data::save::{sg, LevelState, SaveGame, MAP_CELLS};
 
 use crate::consts::Tables;
 
@@ -71,6 +72,10 @@ pub struct Level {
     /// Wall texture slots of `*LEVELUP` / `*LEVELDOWN`.
     pub levelup_slot: Option<usize>,
     pub leveldown_slot: Option<usize>,
+    /// Wall texture slots of `*MENU n` (walls that lead elsewhere).
+    pub menu_slots: [Option<usize>; 16],
+    /// Levels of the location (DGROUP:C355).
+    pub level_count: u8,
     /// Wall height: `*CEILING h` (100 if absent or <= 32).
     pub ceiling: i16,
     pub open_sky: bool,
@@ -157,6 +162,8 @@ impl Level {
             flats: Vec::new(),
             levelup_slot: None,
             leveldown_slot: None,
+            menu_slots: [None; 16],
+            level_count: save.state[sg::LEVEL_COUNT],
             ceiling: 100,
             open_sky: false,
             box_scale: None,
@@ -169,13 +176,74 @@ impl Level {
             door_close_start: four(save, sg::DOOR_CLOSE_START),
         };
         if let Some(inf) = inf {
-            lvl.flats = read_flats(inf);
-            lvl.read_ceiling(inf);
-            lvl.levelup_slot = inf.directive_slot("LEVELUP");
-            lvl.leveldown_slot = inf.directive_slot("LEVELDOWN");
+            lvl.apply_inf(inf);
         }
         lvl.scale_boxes();
         debug_assert_eq!(lvl.map1.len(), MAP_CELLS);
+        lvl
+    }
+
+    /// What the level's `.INF` decides: sprites, wall height, stairs and
+    /// menu walls.
+    fn apply_inf(&mut self, inf: &Inf) {
+        self.flats = read_flats(inf);
+        self.ceiling = 100;
+        self.open_sky = false;
+        self.box_scale = None;
+        self.read_ceiling(inf);
+        self.levelup_slot = inf.directive_slot("LEVELUP");
+        self.leveldown_slot = inf.directive_slot("LEVELDOWN");
+        self.menu_slots = [None; 16];
+        // *MENU n stores the slot of the next texture in DGROUP:C917[n].
+        let mut counter = 1;
+        for e in &inf.entries {
+            if e.section != Section::Walls && e.section != Section::Floors {
+                continue;
+            }
+            match e.kind {
+                Kind::File => counter += e.set_count.max(1),
+                Kind::Directive if e.name == "MENU" => {
+                    if let Some(&n) = e.args.first().filter(|&&n| (0..16).contains(&n)) {
+                        self.menu_slots[n as usize] = Some(counter);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    /// Level `index` of the location, as the level loader 1000:e930 builds
+    /// it: layers, .INF, LOCK records (from the per-level state when there
+    /// is one). Engine-wide values (mode flags, view radius, door sounds)
+    /// carry over from `self`.
+    pub fn load_from(&self, t: &Tables, loc: &Location, index: u8) -> Level {
+        let i = index as usize;
+        let mut lvl = self.clone();
+        lvl.index = index;
+        lvl.width = loc.mif.width;
+        lvl.height = loc.mif.height;
+        lvl.map1 = loc.mif.layer_128(i, b"MAP1", loc.pad).unwrap_or_else(|| vec![loc.pad; MAP_CELLS]);
+        lvl.flor = loc.mif.layer_128(i, b"FLOR", 0).unwrap_or_else(|| vec![0; MAP_CELLS]);
+        lvl.map2 = loc.mif.layer_128(i, b"MAP2", loc.pad).unwrap_or_else(|| vec![loc.pad; MAP_CELLS]);
+        lvl.lflags &= !lf::UPPER;
+        if loc.mif.find(i, b"MAP2").is_some() {
+            lvl.lflags |= lf::UPPER;
+        }
+        lvl.inf_name = loc.mif.string(i, b"INFO").unwrap_or_default().to_ascii_uppercase();
+        if let Some(Some(inf)) = loc.infs.get(i) {
+            lvl.apply_inf(inf);
+        }
+        lvl.box_bottom = t.box_bottom;
+        lvl.box_thick = t.box_thick;
+        lvl.scale_boxes();
+        lvl.locks = match loc.states.get(i) {
+            Some(st) => st.locks.iter().map(|r| Lock { col: r[0], row: r[1], level: r[2] }).collect(),
+            None => loc
+                .mif
+                .find(i, b"LOCK")
+                .map(|c| loc.mif.chunk_data(c).as_chunks::<3>().0.iter().map(|r| Lock { col: r[0], row: r[1], level: r[2] }).collect())
+                .unwrap_or_default(),
+        };
         lvl
     }
 
@@ -236,6 +304,18 @@ impl Level {
     pub fn flat(&self, index: u8) -> Option<&Flat> {
         self.flats.get(index as usize)
     }
+}
+
+/// The location the player is in: its `.MIF` with every level, each level's
+/// `.INF`, and the per-level state the original keeps in STATES (locks and
+/// triggers as last left).
+pub struct Location {
+    pub mif: Mif,
+    pub infs: Vec<Option<Inf>>,
+    pub states: Vec<LevelState>,
+    /// What MAP1 / MAP2 hold outside the level (the original's texture
+    /// memory segment, DGROUP:9030).
+    pub pad: u16,
 }
 
 /// Byte offset of the cell containing (x, z) in a 128 x 128 layer.
