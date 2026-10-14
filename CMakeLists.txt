@@ -32,6 +32,21 @@ add_library(arena STATIC
 )
 target_include_directories(arena PUBLIC src)
 
+# Engine: new code for the port, written from the behaviour notes in docs/.
+add_library(engine STATIC
+  src/engine/consts.c
+  src/engine/level.c
+  src/engine/player.c
+  src/engine/scenario.c
+  src/engine/game.c
+)
+target_include_directories(engine PUBLIC src)
+target_link_libraries(engine PUBLIC arena)
+
+# Headless scenario runner for differential tests (tools/statecmp.py).
+add_executable(arenarun src/port/arenarun.c)
+target_link_libraries(arenarun PRIVATE engine)
+
 add_executable(bsatool src/tools/bsatool.c)
 target_link_libraries(bsatool PRIVATE arena)
 

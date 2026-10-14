@@ -313,3 +313,23 @@
   (confirmed on both characters); 520 known-spell entries all valid; 320 custom spells consistent;
   181 more items checked (correction: item bytes +0x0C/+0x0D are used).
 
+- 2026-10-14: **goal changed** to a native port faithful to observable behaviour, developed by differential
+  testing against the original (`docs/port_plan.md`). Harness: `tools/oracle.py` loads a save in DOSBox-X
+  (keys to the load screen, the slot click answered by skipping the wait-for-click call 35fd:07b0 with the
+  coordinates in AX/BX), then steps the 3D loop one frame at a time with a breakpoint on the movement call
+  1000:a3b3, writes held keys into the game's key table (DGROUP:ACB5 + scancode, kept by its INT 9 handler
+  1000:718a) and reads the state from memory. DOSBox-X does not report breakpoint hits over its control
+  connection; the harness polls CS:IP (an EXEC does not pause a running machine). `RUN` resumes.
+- 2026-10-14: movement rules (`docs/movement.md`): arrow keys fake the mouse in the region table
+  DGROUP:79D8 (3826:0473), so Right turns 17 and Left 18 per frame; walking ramps up by 0x20 per frame
+  (3826:0d20) and drains by 0x40 when released (1000:4896); speeds from 3294:1125 recomputed every frame
+  (the first frame after a load still walks at 20); collision on a 16x16 grid per cell stamped by the
+  nine neighbours shifted 11 squares (radius 40, DGROUP:E7B8, masks DGROUP:E3A2), with axis sliding
+  (1000:f478); height and falling (1000:f9c4). Edge-wall collision uses bit 0x0100 (1000:fb81), settling
+  the open item in map_cells.md. All tables are plain data in ACD.EXE, read at run time
+  (`src/engine/consts.c`).
+- 2026-10-14: engine started (`src/engine/`: consts, level from a SAVEGAME + its .INF, player movement,
+  scenarios, game session) and `arenarun` (headless). Differential run: 6 of 6 scenarios (turning,
+  walking, ramp, coasting, sidestepping, wall slide, corner, closed door, walking while turning) match
+  the original on every frame. `tools/coverage.py` recomputes the studied-code figures (254 functions,
+  21.0% of code bytes).

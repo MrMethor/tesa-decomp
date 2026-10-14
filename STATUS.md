@@ -1,14 +1,15 @@
 # Arena decompilation: status
 
-Snapshot of 2026-10-13. Every number below was measured on this machine;
+Snapshot of 2026-10-14. Every number below was measured on this machine;
 "How the numbers were measured" at the end says how. The work log with
 the details is in `PROGRESS.md`; game-behaviour notes are in `docs/`.
 
-**Scope reminder.** As agreed, this project rebuilds the **data layer** in
-C (every file format, read from your own game files at run time). It
-**documents** the game's behaviour for an engine author, and it provides
-the tools to check both. It does **not** rewrite the game program itself
-as C. That is why "program logic rebuilt as C" stays at 0% by design.
+**Goal (changed 2026-10-14).** The project now builds a **native port that
+plays like the original** (`docs/port_plan.md`). The data layer and the
+behaviour notes are its foundation; the engine is new code written from the
+notes (not a translation of the original's routines), and every behaviour it
+implements is checked against the running original by **differential
+tests**: the same input script is played in both, frame by frame.
 
 ---
 
@@ -22,15 +23,17 @@ as C. That is why "program logic rebuilt as C" stays at 0% by design.
 | Game data not decoded | **0%** | every remaining file is either decoded, partly decoded or never used |
 | Game data never used by the game | 0.1% of bytes | 7 files: RAND.DAT, GUARD.DAT, POPTALK.IMG, S2.IMG, HELP.TXT, JAGTEMP.DAT, EXTRA |
 | File formats fully understood | **37 of 39 (95%)** | 39 of 39 (100%) at least partly |
-| Executable studied in depth | **9.8%** of functions, **20.3%** of code bytes | 244 functions cited in the hand-written analysis |
+| Executable studied in depth | **10.2%** of functions, **21.0%** of code bytes | 254 functions cited in the hand-written analysis (`tools/coverage.py`) |
 | Behaviour facts written up in `docs/` | about 115 | about 85 confirmed by code or data, 17 likely, 11 open |
 | Verification checks | **27 of 27 pass** | `bsatool`, `imgtool`, `maptool`, `soundtool`, `datatool` |
-| Program logic rebuilt as C | 0% | out of scope by agreement (documented in `docs/` instead) |
+| Port: engine systems | movement done | turning, walking, acceleration ramp, collision and sliding (tested); height and falling (from the code, no scenario yet) in `src/engine/`; rendering, window and the other game systems not started |
+| Port: differential scenarios | **6 of 6 match** the original frame for frame | `tools/difftest.py`, `tests/scenarios/`; fields x, y, z, facing, level |
 
 What the percentages mean in practice:
 - **Data layer:** close to complete. Almost every byte your game ships can be read, decoded and checked by this code.
 - **Understanding of the program:** about a fifth of the code by size has been studied. That covers the parts an engine needs first: maps, rendering rules, movement, saves, timing.
 - **Rest of the program:** menus, shops, dialogue, combat and quests have been studied least.
+- **Port:** the first slice runs headless: a real save loads and the player moves, turns and collides exactly like in the original. Next: draw it in a window.
 
 ---
 
@@ -66,7 +69,7 @@ What the percentages mean in practice:
 ### Not done
 - **Not decoded:** nothing; every original game file is decoded, partly decoded (the two big save files) or never used by the game.
 - **Large parts of the program not studied:** character creation, town services and shops, dialogue, combat, quests, the main quest (see the subsystem table below).
-- **Out of scope by agreement:** the game program rebuilt as C; an SDL2 platform layer (it could be built as your own engine on top of the data layer).
+- **Port:** rendering, a window and input (Win32 first; SDL2 later), stairs and level changes, doors opening, chasm climbing, jumping, mouse steering, creatures, combat, items, spells, quests, save/load. See `docs/port_plan.md` for the phases.
 
 ---
 
@@ -179,23 +182,24 @@ line-by-line translation.
 ## Original → new: subsystems
 
 How much of each part of the program has been studied, by functions and
-by code bytes cited in the analysis. The labels come from an automatic
-module map, so treat the split as approximate.
+by code bytes cited in the analysis (`python -I tools/coverage.py --markdown`).
+The labels come from an automatic module map, so treat the split as
+approximate.
 
-| Subsystem | Functions | Studied functions | Studied code bytes | Written up in |
-|---|---|---|---|---|
-| Levels, maps, automap | 206 | 47 (22.8%) | **38.0%** | `docs/map_cells.md`, `mif.h`, `inf.h` |
-| Saves and game state | 108 | 13 (12.0%) | **28.5%** | `save.h` |
-| 3D engine and rendering | 352 | 60 (17.0%) | **27.6%** | `docs/world_loop.md`, `docs/map_cells.md`, `docs/objects.md` |
-| Magic | 183 | 14 (7.7%) | **24.2%** | `tables.h` |
-| Runtime library, memory, files | 131 | 7 (5.3%) | 14.7% | `fs/afile.c`, `docs/map_cells.md` (EMS) |
-| Quests | 138 | 7 (5.1%) | 12.8% | — |
-| Sound and music | 168 | 18 (10.7%) | 12.7% | `docs/world_loop.md` (timers, INT 66h) |
-| Towns, travel, NPCs, shops | 434 | 18 (4.1%) | 12.1% | `docs/map_cells.md` (exterior levels), `save.h` (CITYDATA) |
-| Creatures, combat, items | 272 | 13 (4.8%) | 11.4% | `docs/objects.md` |
-| Character creation and menus | 382 | 24 (6.3%) | 10.4% | `tables.h` (classes), `img.h` |
-| Unlabelled segments | 118 | 3 (2.5%) | 3.2% | — |
-| **Total** | **2,492** | **224 (9.0%)** | **18.7%** | |
+| Subsystem | Functions | Studied functions | Studied code bytes |
+|---|---|---|---|
+| Levels, maps, automap | 241 | 57 (23.7%) | 39.5% |
+| 3D engine, movement, rendering | 385 | 73 (19.0%) | 32.0% |
+| Saves and game state | 113 | 12 (10.6%) | 20.1% |
+| Character creation, menus, input | 315 | 29 (9.2%) | 19.8% |
+| Creatures, combat, items | 210 | 18 (8.6%) | 19.4% |
+| Magic | 150 | 10 (6.7%) | 18.7% |
+| Runtime library, memory, files | 170 | 16 (9.4%) | 17.9% |
+| Quests | 143 | 9 (6.3%) | 15.6% |
+| Sound and music | 146 | 12 (8.2%) | 9.8% |
+| Towns, travel, NPCs, shops | 501 | 15 (3.0%) | 9.3% |
+| Unlabelled segments | 118 | 3 (2.5%) | 3.2% |
+| **Total** | **2,492** | 254 (10.2%) | **21.0%** |
 
 ---
 
@@ -208,7 +212,7 @@ module map, so treat the split as approximate.
 - the loot item contents and the quest / shop / sound areas of SAVEENGN;
 - behaviour notes for the least-studied subsystems (towns, combat, quests, menus).
 
-**Out of scope by agreement:** rewriting the game program as C.
+**Port (new goal):** see `docs/port_plan.md`: rendering and a playable window next, then stairs, doors, chasms, creatures and the other systems, each with scenarios.
 
 ---
 
@@ -219,6 +223,7 @@ module map, so treat the split as approximate.
   - 37 complete: archive, images, code-sized raw images, water/lava `.RCI` animations, image sets, texture sets, DFA, CFA, palettes, light tables, menus, fonts, FLIC, VOC, XMI, MIF, RMD (including the WILD save copies), INF, text decryption, string lists, keyed texts, template index, the dungeon/spellmaker record files, the questionnaire, the fog grid, classes, save names, name chunks, spells, STATES, AUTOMAP, CITYDATA, IN<n>, LOG, VISION.EMS, the executable's tables.
   - 2 partial: SAVEENGN, SAVEGAME.
   - 0 not decoded. (POPTALK.IMG, S2.IMG, RAND.DAT, GUARD.DAT, HELP.TXT, JAGTEMP.DAT and EXTRA are never used by the game and are not counted as formats.)
-- **Functions studied:** an original function counts when an address inside it is cited in the hand-written analysis (`docs/`, comments in `src/`, `PROGRESS.md`, `decomp/notes/*.md`). The generated listings are not counted. A citation means the function was read for a specific finding, not that all of it is understood.
+- **Functions studied:** (`tools/coverage.py`) an original function counts when an address inside it is cited in the hand-written analysis (`docs/`, comments in `src/`, `PROGRESS.md`, `decomp/notes/*.md`). The generated listings are not counted. A citation means the function was read for a specific finding, not that all of it is understood.
 - **Behaviour facts:** confidence marks in the tables and paragraphs of `docs/` (C = confirmed, L = likely, ? = open).
 - **Checks:** every verification command of the five tools run against the original game files; all exit with success.
+- **Differential scenarios:** `tools/difftest.py` plays each scenario in the original (DOSBox-X, stepped by frames) and in the port; a scenario matches when x, y, z, facing and level are equal on every frame.

@@ -1,0 +1,13 @@
+# Walk forward, release and coast; then sidestep both ways.
+save 2
+hold up 10
+check released
+wait 6
+check coasted
+hold ctrl+left 5
+check strafed_left
+wait 5
+hold ctrl+right 5
+check strafed_right
+wait 5
+end

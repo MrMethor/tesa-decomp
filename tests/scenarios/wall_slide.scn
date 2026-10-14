@@ -1,0 +1,9 @@
+# Walk east at a shallow angle into the room's east wall and keep pushing:
+# the player should stop at the wall and slide along it.
+save 2
+hold left 2
+hold up 40
+check at_wall
+hold up 10
+check slid
+end

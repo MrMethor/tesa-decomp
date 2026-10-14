@@ -1,0 +1,7 @@
+# Walk north-east into the corner of the start room and keep pushing.
+save 2
+hold right 1
+hold up 45
+check in_corner
+wait 4
+end

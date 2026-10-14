@@ -1,0 +1,10 @@
+# Walk while turning: forward + left, then forward + right, then sidestep
+# into a wall.
+save 2
+hold up+left 12
+check arc_left
+hold up+right 20
+check arc_right
+hold ctrl+right 25
+check side_wall
+end

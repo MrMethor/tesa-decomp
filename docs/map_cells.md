@@ -181,9 +181,12 @@ file, 1000:f22d). Most also set a per-slot flag (DGROUP:A29D[slot] = 1) that
 makes the slot reload when a level is re-entered (DGROUP:C39A bit 10 mode).
 (C)
 
-### Movement (1000:f4eb)
+### Passability helper (1000:f4eb)
 
-Whether a MAP1 cell lets the player through (carry clear = passable):
+A second, simpler test of whether a MAP1 cell lets something through (carry
+clear = passable). The player's own collision uses the grid described in
+`movement.md`, which differs for edge walls (bit 0x0100) and doors (bits
+0x0F00):
 
 | Cell | Passable when | Conf. |
 |---|---|---|
@@ -375,9 +378,9 @@ to confirm at run time.
 
 ## Still open
 
-- Edge-wall movement: the original code (1000:f4eb) lets the player through
-  when bits 0x0E00 are non-zero; OpenTESArena uses bit 0x0100 instead. The
-  original code is what this document follows.
+- Edge-wall movement: settled. The player's collision grid (1000:fb81, see
+  `movement.md`) blocks on an edge wall when bit 0x0100 is set, as in
+  OpenTESArena; the 0x0E00 test of 1000:f4eb is a different caller's helper.
 - The weather / city variants behind the `.INF` letters n, r, s, w and the
   climates behind m, d, t (see "Exterior levels")
 - The 100x100 crypt levels declared under a 25x25 header
@@ -396,8 +399,7 @@ diagonal direction (0x0100), raised-platform height (0x0700) / thickness
 chasms 12 / 13 / 14 = dry / wet / lava, FLOR low byte = flat index + 1, MAP2
 texture & 0x7F and height from bits 0x80 / 0x8000, sprite flags 0x01 solid,
 0x10 translucent, 0x20 ceiling, `S:` light, `*ITEM 32` = first creature.
-Differences, where this document follows the original code: edge-wall
-collision (see "Still open"); F 0x04 is a 4x size (OpenTESArena 3x); F 0x40 is
+Differences, where this document follows the original code: F 0x04 is a 4x size (OpenTESArena 3x); F 0x40 is
 a 2x size (OpenTESArena 1.5x); F 0x08 draws the sprite unshaded, i.e. full
 brightness (OpenTESArena "dark"). F 0x02 reflection agrees.
 

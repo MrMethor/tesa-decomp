@@ -1,8 +1,8 @@
 # Arena decompilation
 
-Reconstructing The Elder Scrolls: Arena (CD version, `ACD.EXE`) as portable C,
-behaving like the original, with DOS-specific code replaced by an SDL2
-platform layer.
+A native C port of The Elder Scrolls: Arena (CD version, `ACD.EXE`) that
+plays like the original, built on a reverse-engineered data layer and
+checked against the original game by differential tests.
 
 For personal use only: the game is Bethesda's copyrighted work. Don't publish
 the decompiled code or the unpacked executable.
@@ -17,13 +17,25 @@ decompilation exports. To use it you need your own copy of the game; even the
 
 ## Scope
 
-This project covers Arena's data layer (every file format, loaded from the
-player's own game files), documentation of the game's observable behaviour
-(mechanics, formulas, rendering rules), and tools to check both against the
-original. It does not recreate the original program routine by routine from
-its disassembly: that would reproduce Bethesda's code itself. A portable engine
-built on this should be designed independently and use the original data,
-the way OpenTESArena does.
+Goal (set 2026-10-14, see `docs/port_plan.md`): a playable native port whose
+**observable behaviour** matches the original: gameplay rules, world
+behaviour, interactions and progression, with modern rendering, controls and
+platform support allowed. Success is measured by behaviour, not by
+resemblance to the original's code, memory layout or instruction sequence.
+
+How:
+- **Data layer** (done, `src/fs`, `src/gfx`, `src/media`, `src/world`,
+  `src/data`): every file format, loaded from the player's own game files.
+- **Behaviour notes** (`docs/`): what the original does, worked out from its
+  disassembly and from running it. The engine is written from these notes.
+- **Engine** (`src/engine`, new code): the game systems, implemented
+  independently in maintainable C; no routine-by-routine translation of the
+  disassembly.
+- **Differential tests** (`tools/oracle.py`, `tools/difftest.py`,
+  `tests/scenarios/`): the same input script is played in the original game
+  (DOSBox-X, stepped frame by frame through its debugger, game files
+  untouched) and in the port, and the player state is compared frame by
+  frame. Every rule the port implements gets a scenario.
 
 ## Ground rules for the C code
 
@@ -50,7 +62,12 @@ the way OpenTESArena does.
 | `ghidra_project/` | Ghidra project; open it in the Ghidra GUI to browse |
 | `decomp/raw/` | Untouched Ghidra output: every function, index, segment list |
 | `src/` | Reconstructed C source. `src/fs/` file layer + GLOBAL.BSA; `src/tools/` test tools (`bsatool`, `imgtool`, `maptool`, `soundtool`, `datatool`) |
-| `docs/` | Game-behaviour notes for engine authors: `map_cells.md` (cell values, textures, movement, `.INF` directives, triggers), `world_loop.md` (3D loop, timing, hook slots), `objects.md` (object, actor and loot records) |
+| `docs/` | Game-behaviour notes: `port_plan.md` (goal, method, phases), `movement.md` (turning, walking, collision, height), `map_cells.md` (cell values, textures, `.INF` directives, triggers), `world_loop.md` (3D loop, timing, hook slots), `objects.md` (object, actor and loot records) |
+| `src/engine/` | The port's engine (new code): constants read from `ACD.EXE`, level state, player movement, scenarios, game session |
+| `src/port/` | Programs built on the engine: `arenarun` (headless scenario runner) |
+| `tests/scenarios/` | Behaviour scenarios (input scripts) shared by the original and the port |
+| `tools/oracle.py` | Plays a scenario in the original game under DOSBox-X's debugger and records the state every frame |
+| `tools/difftest.py`, `tools/statecmp.py` | Run every scenario in both and compare |
 | `run/` | Working copy of the game for DOSBox-X runs, logs, traces, extracted archive (`run/bsa`) |
 | `CMakeLists.txt`, `build.bat` | Build (MSVC via Visual Studio's bundled CMake; plain C99, builds with gcc/clang too) |
 | `decomp/modules.csv`, `decomp/names.csv` | Module ranges and generated function names |
@@ -84,3 +101,17 @@ build\bsatool.exe "..\The Elder Scrolls Arena\ARENA" verify
 ```
 
 On other systems: `cmake -S . -B build && cmake --build build`.
+
+## Differential tests
+
+Needs DOSBox-X in `../tools/dosbox-x` (debugger build with `mcp_server`),
+the working copy of the game in `run/ARENA` and the unpacked EXE in `bin/`.
+
+```bash
+python -I tools/difftest.py              # all scenarios
+python -I tools/difftest.py wall_slide   # one scenario
+python -I tools/difftest.py --refresh    # replay the original even if cached
+```
+
+Results of the original are cached in `run/oracle/` (observations of the
+original game, not committed).

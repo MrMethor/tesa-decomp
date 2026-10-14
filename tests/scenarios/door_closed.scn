@@ -1,0 +1,6 @@
+# Walk at the closed door in the east wall of the start room.
+save 2
+hold left 1
+hold up 35
+check at_door
+end

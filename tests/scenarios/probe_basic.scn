@@ -1,0 +1,14 @@
+# First probe: idle, turn both ways, walk forward and back.
+# Start: save slot 2 (start dungeon).
+save 2
+wait 3
+check idle
+hold left 4
+check turned_left
+hold right 4
+check turned_back
+hold up 6
+check walked
+hold down 4
+check backed
+end
