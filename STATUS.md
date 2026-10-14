@@ -26,14 +26,15 @@ tests**: the same input script is played in both, frame by frame.
 | Executable studied in depth | **10.2%** of functions, **21.0%** of code bytes | 254 functions cited in the hand-written analysis (`tools/coverage.py`) |
 | Behaviour facts written up in `docs/` | about 115 | about 85 confirmed by code or data, 17 likely, 11 open |
 | Verification checks | **27 of 27 pass** | `bsatool`, `imgtool`, `maptool`, `soundtool`, `datatool` |
-| Port: engine systems | movement done | turning, walking, acceleration ramp, collision and sliding (tested); height and falling (from the code, no scenario yet) in `src/engine/`; rendering, window and the other game systems not started |
-| Port: differential scenarios | **6 of 6 match** the original frame for frame | `tools/difftest.py`, `tests/scenarios/`; fields x, y, z, facing, level |
+| Port (Rust, `crates/`) | **playable slice** | a save loads in a window; turning, walking, ramp, collision, sliding (tested), height and falling (from the code); classic renderer calibrated against the original; doors, stairs, sprites, creatures and the other systems not started |
+| Port: differential scenarios | **7 of 7 match** the original frame for frame | `tools/difftest.py`, `tests/scenarios/`; fields x, y, z, facing, level |
+| Rust readers vs C readers | **2,665 of 2,665 files identical** | `tools/xcheck.py` (archive, images, image sets, palettes, light tables, level descriptions, saves) |
 
 What the percentages mean in practice:
 - **Data layer:** close to complete. Almost every byte your game ships can be read, decoded and checked by this code.
 - **Understanding of the program:** about a fifth of the code by size has been studied. That covers the parts an engine needs first: maps, rendering rules, movement, saves, timing.
 - **Rest of the program:** menus, shops, dialogue, combat and quests have been studied least.
-- **Port:** the first slice runs headless: a real save loads and the player moves, turns and collides exactly like in the original. Next: draw it in a window.
+- **Port:** the first slice is playable in a window, in Rust: a real save loads and the player moves, turns and collides exactly like in the original, drawn with a renderer calibrated against the original's frames.
 
 ---
 

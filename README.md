@@ -23,14 +23,21 @@ behaviour, interactions and progression, with modern rendering, controls and
 platform support allowed. Success is measured by behaviour, not by
 resemblance to the original's code, memory layout or instruction sequence.
 
+The port is written in **Rust** (decision of 2026-10-14) as a Cargo
+workspace in `crates/`. The C code in `src/` is the reference the Rust
+crates are checked against, until each part is matched and retired.
+
 How:
-- **Data layer** (done, `src/fs`, `src/gfx`, `src/media`, `src/world`,
-  `src/data`): every file format, loaded from the player's own game files.
+- **Data layer** (`crates/arena-data`; C reference in `src/fs`, `src/gfx`,
+  `src/media`, `src/world`, `src/data`): every file format, loaded from the
+  player's own game files.
 - **Behaviour notes** (`docs/`): what the original does, worked out from its
   disassembly and from running it. The engine is written from these notes.
-- **Engine** (`src/engine`, new code): the game systems, implemented
-  independently in maintainable C; no routine-by-routine translation of the
-  disassembly.
+- **Engine** (`crates/arena-sim`, new code): the game rules, deterministic
+  and integer-only, one original frame per step; no routine-by-routine
+  translation of the disassembly. Presentation is separate
+  (`crates/arena-render-classic`, later a 3D renderer, modern controls and
+  audio as opt-in modes; see `docs/port_plan.md`).
 - **Differential tests** (`tools/oracle.py`, `tools/difftest.py`,
   `tests/scenarios/`): the same input script is played in the original game
   (DOSBox-X, stepped frame by frame through its debugger, game files
@@ -63,8 +70,9 @@ How:
 | `decomp/raw/` | Untouched Ghidra output: every function, index, segment list |
 | `src/` | Reconstructed C source. `src/fs/` file layer + GLOBAL.BSA; `src/tools/` test tools (`bsatool`, `imgtool`, `maptool`, `soundtool`, `datatool`) |
 | `docs/` | Game-behaviour notes: `port_plan.md` (goal, method, phases), `movement.md` (turning, walking, collision, height), `map_cells.md` (cell values, textures, `.INF` directives, triggers), `world_loop.md` (3D loop, timing, hook slots), `objects.md` (object, actor and loot records) |
-| `src/engine/` | The port's engine (new code): constants read from `ACD.EXE`, level state, player movement, scenarios, game session |
-| `src/port/` | Programs built on the engine: `arenarun` (headless scenario runner) |
+| `crates/` | The Rust port: `arena-data` (formats), `arena-sim` (game rules), `arena-render-classic` (320x200 renderer), `arena` (the game, a window), `arenarun` (headless scenario runner), `arenatool` (checks, `render`) |
+| `src/engine/`, `src/render/`, `src/port/` | First C version of the engine, renderer and runners: reference for the Rust crates |
+| `tools/xcheck.py` | Checks that the Rust readers decode every game file exactly like the C readers |
 | `tests/scenarios/` | Behaviour scenarios (input scripts) shared by the original and the port |
 | `tools/oracle.py` | Plays a scenario in the original game under DOSBox-X's debugger and records the state every frame |
 | `tools/difftest.py`, `tools/statecmp.py` | Run every scenario in both and compare |
@@ -102,6 +110,16 @@ build\bsatool.exe "..\The Elder Scrolls Arena\ARENA" verify
 
 On other systems: `cmake -S . -B build && cmake --build build`.
 
+## Building and running the port
+
+```bash
+cargo build --release
+target/release/arena run/ARENA bin/ACD_unpacked.EXE 2
+```
+
+Arguments: the game folder, the unpacked EXE and a save slot (defaults as
+shown). Arrow keys walk and turn, Ctrl + Left / Right sidesteps, Esc quits.
+
 ## Differential tests
 
 Needs DOSBox-X in `../tools/dosbox-x` (debugger build with `mcp_server`),
@@ -111,6 +129,8 @@ the working copy of the game in `run/ARENA` and the unpacked EXE in `bin/`.
 python -I tools/difftest.py              # all scenarios
 python -I tools/difftest.py wall_slide   # one scenario
 python -I tools/difftest.py --refresh    # replay the original even if cached
+python -I tools/difftest.py --c          # test the C reference instead of the Rust port
+python -I tools/xcheck.py                # Rust readers vs C readers on every game file
 ```
 
 Results of the original are cached in `run/oracle/` (observations of the

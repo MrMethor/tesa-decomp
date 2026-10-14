@@ -73,10 +73,24 @@ modernisation (rendering, controls, platform; must not change game rules).
 | Phase | Content | Status |
 |---|---|---|
 | 1. Test harness | start from a save, input script format, original stepped by frames, state format, comparison | **done**: `oracle.py`, `scenario.py`, `statecmp.py`, `difftest.py` |
-| 2. Smallest playable slice | load a real level, move and turn, collision; then render it and play it in a window | movement **done** (6 of 6 scenarios match); rendering and window next |
+| 2. Smallest playable slice | load a real level, move and turn, collision; then render it and play it in a window | **done**: movement (7 of 7 scenarios match), classic renderer calibrated against captured frames (`docs/rendering.md`), playable window (`crates/arena`) |
 | 3. Faithful navigation | stairs and level changes, doors, chasms and climbing, platforms, water, jumping, mouse steering | open |
 | 4. Gameplay systems | actors and AI, combat, items and inventory, spells, quests, save/load | open |
-| 5. Presentation and platform | renderer, input mapping, audio, configuration, other platforms (SDL2) | open |
+| 5. Presentation and platform | 3D renderer (wgpu), modern controls, audio, configuration, other platforms | open; seams in place (`FrameInput`, `Event`, renderer separate from the rules) |
+
+Language: the port moved to Rust on 2026-10-14 (`crates/`). The C engine in
+`src/engine` was the first version; the Rust crates reproduce it exactly (identical
+state files) and the Rust readers decode every game file like the C readers
+(`tools/xcheck.py`).
+
+### Enhanced mode (later)
+
+Opt-in modernisations allowed by the user (2026-10-14): a full 3D renderer,
+mouse-look / WASD / gamepad controls, smooth high-frame-rate motion
+(interpolating between simulation frames), positional audio. Classic mode
+stays exact and is what the differential tests check; every enhancement
+that changes feel is listed under "Known differences" as an intentional
+modernisation.
 
 Scenario coverage (`tools/difftest.py`):
 
@@ -88,3 +102,4 @@ Scenario coverage (`tools/difftest.py`):
 | corner | stopping in a corner |
 | door_closed | a closed door blocks; sliding past it |
 | turn_walk | walking while turning, sidestepping into a wall |
+| view_start | standing still (also the pose used to check the renderer) |
