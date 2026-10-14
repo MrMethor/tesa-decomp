@@ -1,0 +1,16 @@
+[package]
+name = "arena"
+description = "The Arena port: plays from the player's own game files"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+arena-data = { path = "../arena-data" }
+arena-sim = { path = "../arena-sim" }
+arena-render-classic = { path = "../arena-render-classic" }
+winit = "0.30"
+softbuffer = "0.4"
+
+[lints]
+workspace = true

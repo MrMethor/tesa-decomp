@@ -352,3 +352,7 @@
   depth + 3, stretched wall textures, floor u from z, shading (depth - 64) / 18 with colour 0x70 past the last
   table (`docs/rendering.md`). 41.6% of view pixels identical (upper bound ~50% from sub-texel sampling); edges
   within a pixel. `arenatool render` draws any pose.
+- 2026-10-14: playable window: `crates/arena` (winit 0.30 + softbuffer 0.4, downloads approved by the user):
+  loads a save slot, runs the simulation at the original's 9.1 frames per second with the original's
+  keyboard controls, draws each frame with the classic renderer scaled to a 4:3 window. The interface rows
+  are taken from the save's screen until the port draws its own interface.
