@@ -7,6 +7,14 @@ name = "arena-data"
 version = "0.1.0"
 
 [[package]]
+name = "arena-render-classic"
+version = "0.1.0"
+dependencies = [
+ "arena-data",
+ "arena-sim",
+]
+
+[[package]]
 name = "arena-sim"
 version = "0.1.0"
 dependencies = [
@@ -26,4 +34,6 @@ name = "arenatool"
 version = "0.1.0"
 dependencies = [
  "arena-data",
+ "arena-render-classic",
+ "arena-sim",
 ]

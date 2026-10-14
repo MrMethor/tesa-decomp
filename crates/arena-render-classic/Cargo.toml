@@ -1,0 +1,13 @@
+[package]
+name = "arena-render-classic"
+description = "Software renderer for the Arena port's classic look: 320x200, the game's palette and light tables"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+arena-data = { path = "../arena-data" }
+arena-sim = { path = "../arena-sim" }
+
+[lints]
+workspace = true

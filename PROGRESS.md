@@ -346,3 +346,9 @@
   `tools/difftest.py` 7 of 7 scenarios match the original with the Rust runner, whose state files are
   identical to the C runner's; `tools/xcheck.py` manifests of all 2,665 game files identical between the
   Rust and C readers (947 IMG, 58 CIF, 93 INF, palettes, light tables, saves). Clippy clean.
+- 2026-10-14: classic renderer in Rust (`crates/arena-render-classic`: column ray caster, textures from the
+  level's .INF, NORMAL.LGT shading, std-only PNG writer). Calibrated against frames captured from the original
+  at exact poses (player placed through the debugger): focal 160 (DGROUP:CCF4/CCF6), centre 159,73, eye 60,
+  depth + 3, stretched wall textures, floor u from z, shading (depth - 64) / 18 with colour 0x70 past the last
+  table (`docs/rendering.md`). 41.6% of view pixels identical (upper bound ~50% from sub-texel sampling); edges
+  within a pixel. `arenatool render` draws any pose.

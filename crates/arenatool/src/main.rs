@@ -1,6 +1,7 @@
 //! arenatool: checks of the Rust data readers.
 //!
 //!     arenatool manifest <data dir> <out.txt>
+//!     arenatool render <data dir> <ACD_unpacked.EXE> <slot> <x> <z> <angle> <out prefix> [key=value ...]
 //!
 //! `manifest` decodes every game file (archive members and loose files) and
 //! writes one line of hashes per file. The C reference program
@@ -86,10 +87,10 @@ fn manifest(dir: &str, out: &str) -> Result<usize, String> {
         names.insert(e.name.to_ascii_uppercase());
     }
     for entry in std::fs::read_dir(dir).map_err(|e| e.to_string())?.flatten() {
-        if entry.path().is_file() {
-            if let Some(n) = entry.file_name().to_str() {
-                names.insert(n.to_ascii_uppercase());
-            }
+        if entry.path().is_file()
+            && let Some(n) = entry.file_name().to_str()
+        {
+            names.insert(n.to_ascii_uppercase());
         }
     }
     let mut text = format!("KEYVOTES {}\n", archive.key_votes());
@@ -166,11 +167,68 @@ fn manifest(dir: &str, out: &str) -> Result<usize, String> {
     Ok(names.len())
 }
 
+/// Render the classic view with the player placed at (x, z, angle) in the
+/// level of save slot `slot`; writes `<prefix>.bin` (320 x 200 palette
+/// indices) and `<prefix>.png`. Extra `key=value` arguments override view
+/// parameters (eye, bias, focal_x, focal_y, shade_start, shade_step, tile,
+/// floor_swap, floor_flip_u, floor_flip_v, wall_flip).
+fn render(args: &[String]) -> Result<String, String> {
+    use arena_render_classic::view::{render_with_depth, Camera, Textures, ViewParams};
+    use arena_render_classic::{png, SCREEN_H, SCREEN_W};
+    let [data, exe, slot, x, z, angle, prefix, rest @ ..] = args else {
+        return Err("render: too few arguments".into());
+    };
+    let num = |s: &str| s.parse::<f64>().map_err(|_| format!("bad number {s}"));
+    let archive = Archive::open(data).map_err(|e| format!("{data}: {e}"))?;
+    let exe = arena_data::exe::Exe::load(exe).map_err(|e| format!("{exe}: {e}"))?;
+    let slot: u32 = slot.parse().map_err(|_| "bad slot")?;
+    let mut game = arena_sim::Game::load_slot(&archive, &exe, slot).map_err(|e| e.to_string())?;
+    game.player.x = num(x)? as u16;
+    game.player.z = num(z)? as u16;
+    game.player.angle = num(angle)? as u16 & 511;
+    let mut p = ViewParams::default();
+    for kv in rest {
+        let (k, v) = kv.split_once('=').ok_or_else(|| format!("expected key=value: {kv}"))?;
+        let f = num(v)?;
+        match k {
+            "eye" => p.eye = f,
+            "bias" => p.depth_bias = f,
+            "focal_x" => p.focal_x = f,
+            "focal_y" => p.focal_y = f,
+            "shade_start" => p.shade_start = f,
+            "shade_step" => p.shade_step = f,
+            "tile" => p.wall_tile = f,
+            "floor_swap" => p.floor_swap = f != 0.0,
+            "floor_flip_u" => p.floor_flip_u = f != 0.0,
+            "floor_flip_v" => p.floor_flip_v = f != 0.0,
+            "wall_flip" => p.wall_flip = f != 0.0,
+            "dither" => p.dither = f,
+            "dark" => p.dark_colour = f as u8,
+            _ => return Err(format!("unknown parameter {k}")),
+        }
+    }
+    let inf = Inf::load(&archive, &game.level.inf_name).map_err(|e| e.to_string())?;
+    let textures = Textures::load(&archive, &inf);
+    let lgt = arena_data::palette::LightTables::load(&archive, "NORMAL.LGT").ok();
+    let pal = Palette::load(&archive, "PAL.COL").map_err(|e| e.to_string())?;
+    let mut screen = [0u8; SCREEN_W * SCREEN_H];
+    let mut depth = vec![0f32; SCREEN_W * SCREEN_H];
+    render_with_depth(&mut screen, Some(&mut depth), &game.level, &textures, lgt.as_ref(), &Camera::of(&game), &p);
+    std::fs::write(format!("{prefix}.bin"), screen).map_err(|e| e.to_string())?;
+    let depth_bytes: Vec<u8> = depth.iter().flat_map(|d| d.to_le_bytes()).collect();
+    std::fs::write(format!("{prefix}.depth"), depth_bytes).map_err(|e| e.to_string())?;
+    std::fs::write(format!("{prefix}.png"), png::encode_indexed(&screen, SCREEN_W, SCREEN_H, &pal.to_rgb8()))
+        .map_err(|e| e.to_string())?;
+    Ok(format!("wrote {prefix}.bin / .png"))
+}
+
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let result = match args.as_slice() {
         [cmd, dir, out] if cmd == "manifest" => manifest(dir, out).map(|n| format!("{n} files")),
-        _ => Err("usage: arenatool manifest <data dir> <out.txt>".into()),
+        [cmd, rest @ ..] if cmd == "render" => render(rest),
+        _ => Err("usage: arenatool manifest <data dir> <out.txt>
+       arenatool render <data dir> <exe> <slot> <x> <z> <angle> <out prefix> [key=value ...]".into()),
     };
     match result {
         Ok(msg) => {
