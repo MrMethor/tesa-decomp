@@ -1,6 +1,6 @@
 # Arena decompilation: status
 
-Snapshot of 2026-10-14. Every number below was measured on this machine;
+Snapshot of 2026-10-15. Every number below was measured on this machine;
 "How the numbers were measured" at the end says how. The work log with
 the details is in `PROGRESS.md`; game-behaviour notes are in `docs/`.
 
@@ -23,18 +23,18 @@ tests**: the same input script is played in both, frame by frame.
 | Game data not decoded | **0%** | every remaining file is either decoded, partly decoded or never used |
 | Game data never used by the game | 0.1% of bytes | 7 files: RAND.DAT, GUARD.DAT, POPTALK.IMG, S2.IMG, HELP.TXT, JAGTEMP.DAT, EXTRA |
 | File formats fully understood | **37 of 39 (95%)** | 39 of 39 (100%) at least partly |
-| Executable studied in depth | **10.2%** of functions, **21.0%** of code bytes | 254 functions cited in the hand-written analysis (`tools/coverage.py`) |
+| Executable studied in depth | **10.8%** of functions, **22.2%** of code bytes | 269 functions cited in the hand-written analysis (`tools/coverage.py`) |
 | Behaviour facts written up in `docs/` | about 115 | about 85 confirmed by code or data, 17 likely, 11 open |
 | Verification checks | **27 of 27 pass** | `bsatool`, `imgtool`, `maptool`, `soundtool`, `datatool` |
-| Port (Rust, `crates/`) | **playable slice** | a save loads in a window; turning, walking, ramp, collision, sliding (tested), height and falling (from the code); classic renderer calibrated against the original; doors, stairs, sprites, creatures and the other systems not started |
-| Port: differential scenarios | **7 of 7 match** the original frame for frame | `tools/difftest.py`, `tests/scenarios/`; fields x, y, z, facing, level |
-| Rust readers vs C readers | **2,665 of 2,665 files identical** | `tools/xcheck.py` (archive, images, image sets, palettes, light tables, level descriptions, saves) |
+| Port (Rust, `crates/`) | **playable dungeon** | a save loads in a window; movement, collision, doors, stairs between levels (tested against the original); renderer with lighting, sprites, platforms, diagonal walls (calibrated on captured frames); creatures, combat, items, spells, interface, sound not started |
+| Port: differential scenarios | **10 of 10 match** the original frame for frame | `tools/difftest.py`, `tests/scenarios/`; player position, height, facing, level and watched map cells |
+| Rust readers vs C readers | **all game files identical** | `tools/xcheck.py`: archive, images, image sets, animations, palettes, light tables, level descriptions, levels (.MIF), saves, per-level state |
 
 What the percentages mean in practice:
 - **Data layer:** close to complete. Almost every byte your game ships can be read, decoded and checked by this code.
 - **Understanding of the program:** about a fifth of the code by size has been studied. That covers the parts an engine needs first: maps, rendering rules, movement, saves, timing.
 - **Rest of the program:** menus, shops, dialogue, combat and quests have been studied least.
-- **Port:** the first slice is playable in a window, in Rust: a real save loads and the player moves, turns and collides exactly like in the original, drawn with a renderer calibrated against the original's frames.
+- **Port:** a dungeon is playable in a window, in Rust: movement, doors and stairs behave exactly like the original's (frame by frame), and the view matches captured frames in geometry, lighting and sprites. Creatures and the rest of the game are next.
 
 ---
 
@@ -189,18 +189,18 @@ approximate.
 
 | Subsystem | Functions | Studied functions | Studied code bytes |
 |---|---|---|---|
-| Levels, maps, automap | 241 | 57 (23.7%) | 39.5% |
-| 3D engine, movement, rendering | 385 | 73 (19.0%) | 32.0% |
+| Levels, maps, automap | 241 | 61 (25.3%) | 41.0% |
+| 3D engine, movement, rendering | 385 | 80 (20.8%) | 36.7% |
 | Saves and game state | 113 | 12 (10.6%) | 20.1% |
 | Character creation, menus, input | 315 | 29 (9.2%) | 19.8% |
-| Creatures, combat, items | 210 | 18 (8.6%) | 19.4% |
+| Creatures, combat, items | 210 | 19 (9.0%) | 19.6% |
+| Runtime library, memory, files | 170 | 19 (11.2%) | 18.8% |
 | Magic | 150 | 10 (6.7%) | 18.7% |
-| Runtime library, memory, files | 170 | 16 (9.4%) | 17.9% |
 | Quests | 143 | 9 (6.3%) | 15.6% |
 | Sound and music | 146 | 12 (8.2%) | 9.8% |
 | Towns, travel, NPCs, shops | 501 | 15 (3.0%) | 9.3% |
 | Unlabelled segments | 118 | 3 (2.5%) | 3.2% |
-| **Total** | **2,492** | 254 (10.2%) | **21.0%** |
+| **Total** | **2,492** | 269 (10.8%) | **22.2%** |
 
 ---
 
