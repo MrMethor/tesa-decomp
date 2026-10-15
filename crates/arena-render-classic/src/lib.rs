@@ -7,10 +7,13 @@
 //! 15 units behind the player); the remaining parameters are calibrated
 //! against frames captured from the original (`docs/rendering.md`).
 
+pub mod light;
 pub mod png;
+pub mod sprites;
 pub mod view;
 
-pub use view::{Camera, Textures, ViewParams};
+pub use sprites::SpriteSet;
+pub use view::{draw_scene, Camera, Scene, Textures, ViewParams};
 
 pub const SCREEN_W: usize = 320;
 pub const SCREEN_H: usize = 200;

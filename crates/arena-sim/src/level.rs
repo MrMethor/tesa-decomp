@@ -34,6 +34,15 @@ pub mod mf {
 /// FLOR texture numbers 12..14 are chasms (dry, wet, lava).
 pub const FLOR_CHASM: u16 = 0x0C00;
 
+/// A light source: position in 1/128 cells and strength (the sprite's `S:`
+/// value << 8).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Light {
+    pub x: u16,
+    pub z: u16,
+    pub strength: u16,
+}
+
 /// A LOCK record: the door at (col, row) is locked at `level`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Lock {
@@ -86,6 +95,8 @@ pub struct Level {
     pub box_thick: [[i16; 16]; 2],
     /// Cells around the camera the original walks every frame (DGROUP:C394).
     pub view_radius: u16,
+    /// Light sources {x, z, strength} (DGROUP:BC90, count BC8E).
+    pub lights: Vec<Light>,
     pub locks: Vec<Lock>,
     /// Sound ids by door kind (0xFF = none).
     pub door_slam: [u8; 4],
@@ -121,6 +132,17 @@ fn read_flats(inf: &Inf) -> Vec<Flat> {
 
 fn four(save: &SaveGame, off: usize) -> [u8; 4] {
     [save.state[off], save.state[off + 1], save.state[off + 2], save.state[off + 3]]
+}
+
+/// The saved light list.
+fn read_lights(save: &SaveGame) -> Vec<Light> {
+    let n = (save.state_u16(sg::LIGHT_COUNT) as usize).min(256);
+    (0..n)
+        .map(|i| {
+            let o = sg::LIGHTS + 6 * i;
+            Light { x: save.state_u16(o), z: save.state_u16(o + 2), strength: save.state_u16(o + 4) }
+        })
+        .collect()
 }
 
 /// LOCK records {col, row, level} (DGROUP:C624, count C6E4).
@@ -170,6 +192,7 @@ impl Level {
             box_bottom: t.box_bottom,
             box_thick: t.box_thick,
             view_radius: save.state_u16(sg::VIEW_RADIUS),
+            lights: read_lights(save),
             locks: read_locks(save),
             door_slam: four(save, sg::DOOR_SLAM),
             door_open: four(save, sg::DOOR_OPEN),
@@ -236,6 +259,7 @@ impl Level {
         lvl.box_bottom = t.box_bottom;
         lvl.box_thick = t.box_thick;
         lvl.scale_boxes();
+        lvl.lights = lvl.scan_lights();
         lvl.locks = match loc.states.get(i) {
             Some(st) => st.locks.iter().map(|r| Lock { col: r[0], row: r[1], level: r[2] }).collect(),
             None => loc
@@ -278,6 +302,36 @@ impl Level {
         };
         self.box_bottom.iter_mut().flatten().for_each(f);
         self.box_thick.iter_mut().flatten().for_each(f);
+    }
+
+    /// The level-start light scan (1000:081a): every cell whose sprite has
+    /// an `S:` value is a light at the cell centre of strength S << 8. A
+    /// floor sprite (FLOR low byte = flat + 1) is taken first; otherwise a
+    /// MAP1 cell whose high byte is exactly 0x80 (a sprite, not a creature
+    /// marker).
+    pub fn scan_lights(&self) -> Vec<Light> {
+        let mut out = Vec::new();
+        for row in 0..self.height as usize {
+            for col in 0..self.width as usize {
+                let i = row * DIM + col;
+                let f = self.flor[i] & 0xFF;
+                let flat = if f != 0 {
+                    Some(f - 1)
+                } else if self.map1[i] >> 8 == 0x80 {
+                    Some(self.map1[i] & 0xFF)
+                } else {
+                    None
+                };
+                if let Some(s) = flat.and_then(|n| self.flats.get(n as usize)).map(|fl| fl.s).filter(|&s| s != 0) {
+                    out.push(Light {
+                        x: (col * 128 + 64) as u16,
+                        z: (row * 128 + 64) as u16,
+                        strength: (s as u16) << 8,
+                    });
+                }
+            }
+        }
+        out
     }
 
     /// Platform bottom and top for a platform cell value (1000:fcb9).

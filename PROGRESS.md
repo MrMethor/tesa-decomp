@@ -370,3 +370,10 @@
   reloads textures on a level change. Test fixture: `tools/makesave.py` builds a save slot in the working
   copy at any level of any .MIF (slot 9: a three-level dungeon next to its stairs down); `stairs_down` matches
   the original. 10 of 10 scenarios match.
+- 2026-10-15: sprites and lighting in the classic renderer. `.DFA` reader in Rust (all 79 files identical to
+  C); sprites drawn at cell centres one unit per pixel with the F: size / ceiling / unshaded flags, sorted and
+  clipped against walls (1000:d18e, c0f1, c2ce). Lighting from the code (`docs/rendering.md`): per point the
+  brightest level of the camera's own light (DGROUP:C3E2 = 320) and the level's lights (S: sprites, scan
+  1000:081a; active within 2048 at 5/8 strength, 1000:e12e); level = 0 inside s/2, +1 per (s/2)/13
+  (1000:b777). Matches captured frames visually (the lit hall near the torches); identical-pixel scores stay
+  at the texel-sampling limit.

@@ -21,7 +21,8 @@ use arena_data::inf::Inf;
 use arena_data::palette::{LightTables, Palette};
 use arena_data::save::SaveGame;
 use arena_data::Archive;
-use arena_render_classic::view::{render_picking, Camera, Picking, Textures, ViewParams};
+use arena_render_classic::view::{draw_scene, Camera, Picking, Scene, Textures, ViewParams};
+use arena_render_classic::SpriteSet;
 use arena_render_classic::{Screen, SCREEN_W, SCREEN_H, VIEW_H};
 use arena_sim::{Event, FrameInput, Game, KeyState};
 
@@ -30,6 +31,7 @@ pub struct Session {
     archive: Archive,
     game: Game,
     textures: Textures,
+    sprites: SpriteSet,
     lights: Option<LightTables>,
     params: ViewParams,
     /// The interface rows below the 3D view, taken from the save's screen
@@ -48,6 +50,7 @@ impl Session {
         let game = Game::load_slot(&archive, &exe, slot).map_err(|e| e.to_string())?;
         let inf = Inf::load(&archive, &game.level.inf_name).map_err(|e| e.to_string())?;
         let textures = Textures::load(&archive, &inf);
+        let sprites = SpriteSet::load(&archive, &inf);
         let lights = LightTables::load(&archive, "NORMAL.LGT").ok();
         let pal = Palette::load(&archive, "PAL.COL").map_err(|e| e.to_string())?.to_rgb8();
         let palette = std::array::from_fn(|i| {
@@ -59,6 +62,7 @@ impl Session {
             archive,
             game,
             textures,
+            sprites,
             lights,
             params: ViewParams::default(),
             interface,
@@ -82,20 +86,22 @@ impl Session {
     fn reload_textures(&mut self) {
         if let Ok(inf) = Inf::load(&self.archive, &self.game.level.inf_name) {
             self.textures = Textures::load(&self.archive, &inf);
+            self.sprites = SpriteSet::load(&self.archive, &inf);
         }
     }
 
     /// Draw the current state into the 320 x 200 frame.
     pub fn draw(&mut self) -> &Screen {
-        render_picking(
-            &mut self.screen,
-            &mut self.picking,
-            &self.game.level,
-            &self.textures,
-            self.lights.as_ref(),
-            &Camera::of(&self.game),
-            &self.params,
-        );
+        let scene = Scene {
+            level: &self.game.level,
+            textures: &self.textures,
+            sprites: Some(&self.sprites),
+            lights: self.lights.as_ref(),
+            camera: Camera::of(&self.game),
+            params: &self.params,
+            counter: self.game.frame,
+        };
+        draw_scene(&mut self.screen, &scene, Some(&mut self.picking));
         self.screen[VIEW_H * SCREEN_W..].copy_from_slice(&self.interface);
         &self.screen
     }

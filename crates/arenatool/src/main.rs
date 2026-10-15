@@ -138,6 +138,22 @@ fn manifest(dir: &str, out: &str) -> Result<usize, String> {
             }
         } else if has_ext(name, "INF") {
             text.push_str(&inf_line(name, &buf));
+        } else if has_ext(name, "DFA") {
+            match arena_data::dfa::Dfa::parse(buf.clone()) {
+                Ok(d) => {
+                    let mut h = FNV0;
+                    for k in 0..d.frames as usize {
+                        match d.frame(k) {
+                            Ok(px) => h = fnv(h, &px),
+                            Err(_) => h = fnv(h, b"ERR"),
+                        }
+                    }
+                    let _ = writeln!(text, "DFA {name} {} {} {} {h:016x}", d.frames, d.width, d.height);
+                }
+                Err(_) => {
+                    let _ = writeln!(text, "DFA {name} ERR");
+                }
+            }
         } else if has_ext(name, "MIF") {
             match arena_data::mif::Mif::parse(buf.clone()) {
                 Ok(m) => {
@@ -239,6 +255,7 @@ fn render(args: &[String]) -> Result<String, String> {
     game.player.z = num(z)? as u16;
     game.player.angle = num(angle)? as u16 & 511;
     let mut p = ViewParams::default();
+    let mut with_sprites = true;
     for kv in rest {
         let (k, v) = kv.split_once('=').ok_or_else(|| format!("expected key=value: {kv}"))?;
         let f = num(v)?;
@@ -256,6 +273,10 @@ fn render(args: &[String]) -> Result<String, String> {
             "wall_flip" => p.wall_flip = f != 0.0,
             "dither" => p.dither = f,
             "dark" => p.dark_colour = f as u8,
+            "sprites" => with_sprites = f != 0.0,
+            "lights" => p.lights = f != 0.0,
+            "light_back" => p.light_back = f,
+            "light_strength" => p.light_strength = f as u16,
             _ => return Err(format!("unknown parameter {k}")),
         }
     }
@@ -265,7 +286,13 @@ fn render(args: &[String]) -> Result<String, String> {
     let pal = Palette::load(&archive, "PAL.COL").map_err(|e| e.to_string())?;
     let mut screen = [0u8; SCREEN_W * SCREEN_H];
     let mut depth = vec![0f32; SCREEN_W * SCREEN_H];
-    render_with_depth(&mut screen, Some(&mut depth), None, &game.level, &textures, lgt.as_ref(), &Camera::of(&game), &p);
+    let cam = Camera::of(&game);
+    let wall_depth =
+        render_with_depth(&mut screen, Some(&mut depth), None, &game.level, &textures, lgt.as_ref(), &cam, &p);
+    if with_sprites {
+        let sprites = arena_render_classic::SpriteSet::load(&archive, &inf);
+        arena_render_classic::sprites::draw(&mut screen, &wall_depth, &game.level, &sprites, lgt.as_ref(), &cam, &p, 0);
+    }
     std::fs::write(format!("{prefix}.bin"), screen).map_err(|e| e.to_string())?;
     let depth_bytes: Vec<u8> = depth.iter().flat_map(|d| d.to_le_bytes()).collect();
     std::fs::write(format!("{prefix}.depth"), depth_bytes).map_err(|e| e.to_string())?;

@@ -8,6 +8,7 @@ use arena_sim::cell::Cell;
 use arena_sim::level::{Level, DIM};
 use arena_sim::Game;
 
+use crate::light::Lighting;
 use crate::{Screen, SCREEN_W, VIEW_H};
 
 const CELL: f64 = 128.0;
@@ -87,6 +88,13 @@ pub struct ViewParams {
     pub dither: f64,
     /// Colour drawn where the light level runs past the last light table.
     pub dark_colour: u8,
+    /// Shade by the original's lights (true) or by distance with
+    /// shade_start / shade_step (calibration).
+    pub lights: bool,
+    /// Calibration: the player's light placed this many units behind the
+    /// camera, and its strength overridden (0 = the game's value).
+    pub light_back: f64,
+    pub light_strength: u16,
 }
 
 impl Default for ViewParams {
@@ -108,6 +116,9 @@ impl Default for ViewParams {
             wall_tile: 0.0,
             dither: 0.0,
             dark_colour: 0x70,
+            lights: true,
+            light_back: 0.0,
+            light_strength: 0,
         }
     }
 }
@@ -141,12 +152,21 @@ pub struct Camera {
     pub z: f64,
     /// 512 per turn; x grows with sine, z with cosine.
     pub angle: u16,
+    /// Strength of the player's own light.
+    pub light: u16,
 }
 
 impl Camera {
     pub fn of(game: &Game) -> Camera {
         let (x, z) = game.camera();
-        Camera { x: x as f64, z: z as f64, angle: game.player.angle }
+        Camera { x: x as f64, z: z as f64, angle: game.player.angle, light: game.player.light }
+    }
+
+    pub fn lighting(&self, level: &Level, p: &ViewParams) -> Lighting {
+        let a = (self.angle & 511) as f64 * std::f64::consts::TAU / 512.0;
+        let (x, z) = (self.x - a.sin() * p.light_back, self.z - a.cos() * p.light_back);
+        let s = if p.light_strength != 0 { p.light_strength } else { self.light };
+        Lighting::build(level, x as i32, z as i32, s)
     }
 }
 
@@ -158,10 +178,18 @@ const BAYER: [[f64; 4]; 4] = [
     [15.0 / 16.0, 7.0 / 16.0, 13.0 / 16.0, 5.0 / 16.0],
 ];
 
-fn shade(lgt: Option<&LightTables>, c: u8, dist: f64, p: &ViewParams, x: usize, y: usize) -> u8 {
+/// Shade colour `c`: with the original's lighting by the light level at
+/// world point (wx, wz), otherwise (calibration mode) by distance.
+#[allow(clippy::too_many_arguments)]
+fn shade(lgt: Option<&LightTables>, lit: Option<&Lighting>, c: u8, dist: f64, wx: f64, wz: f64, p: &ViewParams, x: usize, y: usize) -> u8 {
     let Some(l) = lgt else { return c };
-    let level = ((dist - p.shade_start) / p.shade_step).max(0.0);
-    let t = (level + (BAYER[y & 3][x & 3] - 0.5) * p.dither).floor().max(0.0) as usize;
+    let t = match lit {
+        Some(lit) => lit.level_at(wx as i32, wz as i32) as usize,
+        None => {
+            let level = ((dist - p.shade_start) / p.shade_step).max(0.0);
+            (level + (BAYER[y & 3][x & 3] - 0.5) * p.dither).floor().max(0.0) as usize
+        }
+    };
     if t >= LGT_TABLES { p.dark_colour } else { l.tables[t][c as usize] }
 }
 
@@ -192,6 +220,36 @@ pub fn render(
     render_with_depth(screen, None, None, level, tex, lgt, cam, p);
 }
 
+/// Everything a classic frame is drawn from.
+pub struct Scene<'a> {
+    pub level: &'a Level,
+    pub textures: &'a Textures,
+    pub sprites: Option<&'a crate::sprites::SpriteSet>,
+    pub lights: Option<&'a LightTables>,
+    pub camera: Camera,
+    pub params: &'a ViewParams,
+    /// Frame counter: picks the frame of animated sprites.
+    pub counter: u32,
+}
+
+/// Draw walls, floor, ceiling and sprites; optionally record what each
+/// column shows for mouse picking.
+pub fn draw_scene(screen: &mut Screen, scene: &Scene, picking: Option<&mut Picking>) {
+    let wall_depth = render_with_depth(
+        screen,
+        None,
+        picking,
+        scene.level,
+        scene.textures,
+        scene.lights,
+        &scene.camera,
+        scene.params,
+    );
+    if let Some(s) = scene.sprites {
+        crate::sprites::draw(screen, &wall_depth, scene.level, s, scene.lights, &scene.camera, scene.params, scene.counter);
+    }
+}
+
 /// As [`render`], also recording which cell each column shows.
 pub fn render_picking(
     screen: &mut Screen,
@@ -217,11 +275,14 @@ pub fn render_with_depth(
     lgt: Option<&LightTables>,
     cam: &Camera,
     p: &ViewParams,
-) {
+) -> Vec<f64> {
     let a = (cam.angle & 511) as f64 * std::f64::consts::TAU / 512.0;
     let (fx, fz) = (a.sin(), a.cos()); // forward
     let (rx, rz) = (a.cos(), -a.sin()); // right: a quarter turn further
     let ceiling = level.ceiling as f64;
+    let mut wall_depth = vec![f64::INFINITY; SCREEN_W];
+    let lighting = p.lights.then(|| cam.lighting(level, p));
+    let lit = lighting.as_ref();
     let ctex = tex.ceiling.and_then(|i| tex.get(i));
 
     for col in 0..SCREEN_W {
@@ -274,6 +335,9 @@ pub fn render_with_depth(
         if let Some(pk) = picking.as_deref_mut() {
             pk.columns[col] = hit_cell.map(|(c, r)| (c, r, top, bottom));
         }
+        if let Some((_, depth, _)) = hit {
+            wall_depth[col] = depth;
+        }
         for y in 0..VIEW_H {
             let yi = y as i32;
             let yf = y as f64;
@@ -286,7 +350,8 @@ pub fn render_with_depth(
                 let v = if p.wall_tile > 0.0 { (h / p.wall_tile).rem_euclid(1.0) } else { h / ceiling };
                 let tu = ((u * 64.0) as usize).min(63);
                 let tv = 63 - ((v * 64.0) as i32).clamp(0, 63) as usize;
-                tex.get(t).map_or(0, |tx| shade(lgt, tx[tv * 64 + tu], depth, p, col, y))
+                let (wx, wz) = (cam.x + dx * depth, cam.z + dz * depth);
+                tex.get(t).map_or(0, |tx| shade(lgt, lit, tx[tv * 64 + tu], depth, wx, wz, p, col, y))
             } else if yf > p.cy {
                 let d = p.eye * p.focal_y / (yf - p.cy);
                 let depth = d - p.depth_bias;
@@ -295,7 +360,7 @@ pub fn render_with_depth(
                 let (cx, cz) = ((wx / CELL).floor() as i32, (wz / CELL).floor() as i32);
                 if (0..DIM as i32).contains(&cx) && (0..DIM as i32).contains(&cz) {
                     let t = (level.flor[cz as usize * DIM + cx as usize] >> 8) as usize;
-                    tex.get(t).map_or(0, |tx| shade(lgt, tx[floor_texel(wx, wz, p)], depth, p, col, y))
+                    tex.get(t).map_or(0, |tx| shade(lgt, lit, tx[floor_texel(wx, wz, p)], depth, wx, wz, p, col, y))
                 } else {
                     0
                 }
@@ -304,7 +369,7 @@ pub fn render_with_depth(
                 let depth = d - p.depth_bias;
                 px_depth = depth;
                 let (wx, wz) = (cam.x + dx * depth, cam.z + dz * depth);
-                shade(lgt, tx[floor_texel(wx, wz, p)], depth, p, col, y)
+                shade(lgt, lit, tx[floor_texel(wx, wz, p)], depth, wx, wz, p, col, y)
             } else {
                 0
             };
@@ -314,6 +379,7 @@ pub fn render_with_depth(
             }
         }
     }
+    wall_depth
 }
 
 fn floor_texel(wx: f64, wz: f64, p: &ViewParams) -> usize {

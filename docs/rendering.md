@@ -23,12 +23,43 @@ Walls are textured with u running against the ray's crossing direction (the
 port's `wall_flip`); floors and ceilings take u from z and v from x
 (`floor_swap`), 64 texels per 128-unit cell. (F)
 
-## Shading
+## Lighting
 
-Distance shading uses the 13 tables of NORMAL.LGT: table index =
-`(depth - 64) / 18`, and past the last table everything is drawn in colour
-0x70 (the far end of the start dungeon is a solid dark rectangle). (F)
-Ordered dithering between levels did not improve the fit.
+Every shaded point gets a light level 0 (full) .. 13 (dark): the brightest
+level any light gives it (1000:b6eb, b720, b777). Levels 0..12 select a
+NORMAL.LGT table; 13 (or beyond every light) is drawn in colour 0x70. (C)
+
+- A light of strength s at octagonal distance d (larger offset + smaller
+  offset / 4) gives level 0 for d < s / 2, then one level more per
+  (s / 2) / 13 units, and nothing for d > s (1000:b777).
+- Light 0 is the camera's own: at the camera position, strength DGROUP:C3E2
+  (320 without a light spell; 1000:48e1). (C)
+- The level's lights (DGROUP:BC90, count BC8E) come from the level-start
+  scan (1000:081a): every cell whose sprite has an `S:` value, at the cell
+  centre, strength S << 8; a floor sprite (FLOR low byte) first, else a MAP1
+  cell with high byte exactly 0x80. Whenever the camera enters another
+  4-cell block, the lights within 2048 units (DGROUP:C396) are copied into
+  the active list at 5/8 of their strength (1000:e12e). (C)
+- The port evaluates the level per pixel at the pixel's world point (walls:
+  the ray's hit point; floor and ceiling: the floor point), and once per
+  sprite at its cell centre. It takes the lights within 2048 units every
+  frame rather than at block changes. (F: the light model scores at least as
+  well as any fitted distance curve and reproduces the lit areas around
+  torches)
+
+The earlier distance-only fit (`(depth - 64) / 18`, ViewParams `lights:
+false`) remains available for calibration.
+
+## Sprites
+
+A cell's sprite is drawn at the cell centre, one world unit per image
+pixel, centred horizontally and standing on its base point (camera height
++ the sprite's `Y:`, minus the wall height if `F:` 0x20 hangs it from the
+ceiling); `F:` 0x04 draws it 4x larger, 0x40 2x larger, 0x08 unshaded;
+sprites nearer than 20 units are skipped (1000:d18e, c0f1, c2ce). Animated
+sprites (`.DFA`) show frame (frame counter mod frames). The port sorts the
+sprites far to near and hides them behind nearer walls column by column.
+(C: position and size match captured frames)
 
 ## Fit
 
@@ -44,11 +75,11 @@ With the defaults above:
 
 ## Open
 
-- Sprites (flats, creatures), doors drawn open or at their offsets, edge
+- Creatures, translucent sprites (`F:` 0x10), doors drawn open or at their offsets, edge
   and diagonal walls, raised platforms, the upper storey (MAP2) and the sky
   of exteriors are not drawn yet.
-- The light sources of a level (LITE chunk, `S:` flats) and the player's own
-  light probably modulate the distance shading; only the start dungeon's
-  default has been fitted.
+- The per-light flag table DGROUP:C997 (a light can be dimmed by 13 levels
+  for a sprite) and the second light list DGROUP:BBCC (count BC8C), likely
+  moving lights such as spells.
 - Exact texel sampling (sub-texel offsets) of the original's span filler
   (1000:d78c).

@@ -8,6 +8,7 @@
 
 pub mod archive;
 pub mod compress;
+pub mod dfa;
 pub mod exe;
 pub mod img;
 pub mod inf;

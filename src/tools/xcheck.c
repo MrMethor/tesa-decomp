@@ -18,6 +18,7 @@
 
 #include "data/save.h"
 #include "fs/afile.h"
+#include "gfx/dfa.h"
 #include "gfx/img.h"
 #include "gfx/palette.h"
 #include "world/inf.h"
@@ -204,6 +205,28 @@ int main(int argc, char **argv)
 				fprintf(out, "LGT %s ERR\n", name);
 		} else if (has_ext(name, "INF")) {
 			inf_line(out, name, buf, len);
+		} else if (has_ext(name, "DFA")) {
+			arena_dfa d;
+			uint8_t  *copy = malloc(len ? len : 1);
+			memcpy(copy, buf, len);
+			if (dfa_from_bytes(copy, len, &d) == 0) {
+				u64     h = FNV0;
+				size_t  npix = (size_t)d.width * d.height;
+				uint8_t *px = malloc(npix ? npix : 1);
+				unsigned k;
+				for (k = 0; k < d.frames; k++) {
+					memset(px, 0, npix);
+					if (dfa_frame(&d, k, px) == 0)
+						h = fnv(h, px, npix);
+					else
+						h = fnv(h, "ERR", 3);
+				}
+				free(px);
+				fprintf(out, "DFA %s %u %u %u %016llx\n", name, d.frames, d.width, d.height, h);
+				dfa_free(&d);
+			} else {
+				fprintf(out, "DFA %s ERR\n", name);
+			}
 		} else if (has_ext(name, "MIF")) {
 			arena_mif *m = malloc(sizeof *m);
 			uint8_t   *copy = malloc(len ? len : 1);

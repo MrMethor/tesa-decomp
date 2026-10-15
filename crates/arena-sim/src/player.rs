@@ -50,6 +50,9 @@ pub struct Player {
     pub race: u8,
     /// Bit 6: cannot move or turn.
     pub status: u16,
+    /// Strength of the player's own light (DGROUP:C3E2; 320 without a
+    /// light spell).
+    pub light: u16,
 }
 
 impl Player {
@@ -72,6 +75,7 @@ impl Player {
             burden: 0,
             race: 0,
             status: 0,
+            light: save.state_u16(0xC3E2 - 0xBB08),
         };
         if let Some(e) = engn {
             let b = &e.block1;
