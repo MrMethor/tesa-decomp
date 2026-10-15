@@ -386,3 +386,8 @@
   gets the high word (1000:6e10, confirmed on the running game); several routines reseed it from fixed values
   around deterministic jobs. The harness records it (`d_rng`) and now retries a run when DOSBox-X's control
   connection stops answering (`tools/oracle.py`).
+- 2026-10-15: creatures studied (`docs/creatures.md`): markers (type-8 cells with bit 9) placed in MAP1 at
+  level generation turn into opponents (actor slots 15-22 with character records) when the camera comes
+  within 800 units (35ca:0271); a CPU-trace diff with and without creatures located the per-frame update
+  (1000:1d3c and helpers: random wander, turn to the player, step through the creature-mode collision,
+  attack within 170 units, hits on 1 roll in 22). CFA reader in Rust (all 340 files identical to C).
