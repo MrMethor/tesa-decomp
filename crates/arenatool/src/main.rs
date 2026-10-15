@@ -138,6 +138,22 @@ fn manifest(dir: &str, out: &str) -> Result<usize, String> {
             }
         } else if has_ext(name, "INF") {
             text.push_str(&inf_line(name, &buf));
+        } else if has_ext(name, "CFA") {
+            match arena_data::cfa::Cfa::parse(buf.clone()) {
+                Ok(c) => {
+                    let mut h = FNV0;
+                    for k in 0..c.frames as usize {
+                        match c.frame(k) {
+                            Ok(px) => h = fnv(h, &px),
+                            Err(_) => h = fnv(h, b"ERR"),
+                        }
+                    }
+                    let _ = writeln!(text, "CFA {name} {} {} {} {} {h:016x}", c.frames, c.width, c.height, c.bpp);
+                }
+                Err(_) => {
+                    let _ = writeln!(text, "CFA {name} ERR");
+                }
+            }
         } else if has_ext(name, "DFA") {
             match arena_data::dfa::Dfa::parse(buf.clone()) {
                 Ok(d) => {

@@ -18,6 +18,7 @@
 
 #include "data/save.h"
 #include "fs/afile.h"
+#include "gfx/cfa.h"
 #include "gfx/dfa.h"
 #include "gfx/img.h"
 #include "gfx/palette.h"
@@ -205,6 +206,28 @@ int main(int argc, char **argv)
 				fprintf(out, "LGT %s ERR\n", name);
 		} else if (has_ext(name, "INF")) {
 			inf_line(out, name, buf, len);
+		} else if (has_ext(name, "CFA")) {
+			arena_cfa c;
+			uint8_t  *copy = malloc(len ? len : 1);
+			memcpy(copy, buf, len);
+			if (cfa_from_bytes(copy, len, &c) == 0) {
+				u64      h = FNV0;
+				size_t   npix = (size_t)c.width * c.height;
+				uint8_t *px = malloc(npix ? npix : 1);
+				unsigned k;
+				for (k = 0; k < c.frames; k++) {
+					memset(px, 0, npix);
+					if (cfa_frame(&c, k, px, NULL, NULL) == 0)
+						h = fnv(h, px, npix);
+					else
+						h = fnv(h, "ERR", 3);
+				}
+				free(px);
+				fprintf(out, "CFA %s %u %u %u %u %016llx\n", name, c.frames, c.width, c.height, c.bpp, h);
+				cfa_free(&c);
+			} else {
+				fprintf(out, "CFA %s ERR\n", name);
+			}
 		} else if (has_ext(name, "DFA")) {
 			arena_dfa d;
 			uint8_t  *copy = malloc(len ? len : 1);

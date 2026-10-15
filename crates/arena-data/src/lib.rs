@@ -7,6 +7,7 @@
 //! repository.
 
 pub mod archive;
+pub mod cfa;
 pub mod compress;
 pub mod dfa;
 pub mod exe;
