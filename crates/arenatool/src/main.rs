@@ -241,7 +241,7 @@ fn manifest(dir: &str, out: &str) -> Result<usize, String> {
 /// parameters (eye, bias, focal_x, focal_y, shade_start, shade_step, tile,
 /// floor_swap, floor_flip_u, floor_flip_v, wall_flip).
 fn render(args: &[String]) -> Result<String, String> {
-    use arena_render_classic::view::{render_with_depth, Camera, Textures, ViewParams};
+    use arena_render_classic::view::{render_view, Camera, Textures, ViewParams};
     use arena_render_classic::{png, SCREEN_H, SCREEN_W};
     let [data, exe, slot, x, z, angle, prefix, rest @ ..] = args else {
         return Err("render: too few arguments".into());
@@ -276,6 +276,11 @@ fn render(args: &[String]) -> Result<String, String> {
             "sprites" => with_sprites = f != 0.0,
             "lights" => p.lights = f != 0.0,
             "light_back" => p.light_back = f,
+            "diag_swap" => p.diag_swap = f != 0.0,
+            "affine" => p.affine = f != 0.0,
+            "diag_scale" => p.diag_scale = f,
+            "diag_offset" => p.diag_offset = f,
+            "diag_u_flip" => p.diag_u_flip = f != 0.0,
             "light_strength" => p.light_strength = f as u16,
             _ => return Err(format!("unknown parameter {k}")),
         }
@@ -285,15 +290,16 @@ fn render(args: &[String]) -> Result<String, String> {
     let lgt = arena_data::palette::LightTables::load(&archive, "NORMAL.LGT").ok();
     let pal = Palette::load(&archive, "PAL.COL").map_err(|e| e.to_string())?;
     let mut screen = [0u8; SCREEN_W * SCREEN_H];
-    let mut depth = vec![0f32; SCREEN_W * SCREEN_H];
     let cam = Camera::of(&game);
-    let wall_depth =
-        render_with_depth(&mut screen, Some(&mut depth), None, &game.level, &textures, lgt.as_ref(), &cam, &p);
+    let zbuf = render_view(&mut screen, None, &game.level, &textures, lgt.as_ref(), &cam, &p);
     if with_sprites {
         let sprites = arena_render_classic::SpriteSet::load(&archive, &inf);
-        arena_render_classic::sprites::draw(&mut screen, &wall_depth, &game.level, &sprites, lgt.as_ref(), &cam, &p, 0);
+        arena_render_classic::sprites::draw(&mut screen, &zbuf, &game.level, &sprites, lgt.as_ref(), &cam, &p, 0);
     }
     std::fs::write(format!("{prefix}.bin"), screen).map_err(|e| e.to_string())?;
+    let depth: Vec<f32> = (0..SCREEN_W * SCREEN_H)
+        .map(|i| zbuf.get(i).copied().filter(|d| d.is_finite()).unwrap_or(0.0))
+        .collect();
     let depth_bytes: Vec<u8> = depth.iter().flat_map(|d| d.to_le_bytes()).collect();
     std::fs::write(format!("{prefix}.depth"), depth_bytes).map_err(|e| e.to_string())?;
     std::fs::write(format!("{prefix}.png"), png::encode_indexed(&screen, SCREEN_W, SCREEN_H, &pal.to_rgb8()))

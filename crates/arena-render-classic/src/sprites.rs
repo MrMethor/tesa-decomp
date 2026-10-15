@@ -83,12 +83,12 @@ struct Placed {
 }
 
 /// Draw the sprites of map cells within the view radius over the walls.
-/// `wall_depth[col]` is the depth of the wall drawn in each column (sprites
-/// behind it are hidden).
+/// `zbuf` holds the depth of every view pixel drawn so far (sprites behind
+/// it are hidden).
 #[allow(clippy::too_many_arguments)]
 pub fn draw(
     screen: &mut Screen,
-    wall_depth: &[f64],
+    zbuf: &[f32],
     level: &Level,
     sprites: &SpriteSet,
     lgt: Option<&LightTables>,
@@ -142,7 +142,8 @@ pub fn draw(
         let Some(img) = sprites.frame(s.flat, counter) else { continue };
         let d = s.depth + p.depth_bias;
         let sx = p.cx + s.lateral * p.focal_x / d;
-        let sy = p.cy + (s.base_y + p.eye) * p.focal_y / d;
+        let eye = cam.height + (p.eye - 60.0);
+        let sy = p.cy + (s.base_y + eye) * p.focal_y / d;
         let w = img.w as f64 * s.scale * p.focal_x / d;
         let h = img.h as f64 * s.scale * p.focal_y / d;
         let (x0, y0) = (sx - w / 2.0, sy - h);
@@ -155,9 +156,6 @@ pub fn draw(
         };
         let cols = (x0.floor().max(0.0) as usize)..((x0 + w).ceil().min(SCREEN_W as f64) as usize);
         for col in cols {
-            if wall_depth[col] <= s.depth {
-                continue;
-            }
             let u = (((col as f64 + 0.5 - x0) / w) * img.w as f64) as usize;
             if u >= img.w {
                 continue;
@@ -169,7 +167,7 @@ pub fn draw(
                     continue;
                 }
                 let c = img.px[v * img.w + u];
-                if c == 0 {
+                if c == 0 || zbuf[y * SCREEN_W + col] <= s.depth as f32 {
                     continue;
                 }
                 screen[y * SCREEN_W + col] = match (shade_table, lgt) {

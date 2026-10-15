@@ -95,6 +95,16 @@ pub struct ViewParams {
     /// camera, and its strength overridden (0 = the game's value).
     pub light_back: f64,
     pub light_strength: u16,
+    /// Calibration: swap the two diagonals; reverse u along a diagonal.
+    pub diag_swap: bool,
+    pub diag_u_flip: bool,
+    /// Texture u interpolated linearly across each face on screen (affine)
+    /// instead of perspective-correct.
+    pub affine: bool,
+    /// Texture repeats along a diagonal wall (1 = stretched corner to
+    /// corner, 1.414 = the same texel density as straight walls).
+    pub diag_scale: f64,
+    pub diag_offset: f64,
 }
 
 impl Default for ViewParams {
@@ -119,13 +129,18 @@ impl Default for ViewParams {
             lights: true,
             light_back: 0.0,
             light_strength: 0,
+            diag_swap: false,
+            diag_u_flip: false,
+            affine: false,
+            diag_scale: 1.0,
+            diag_offset: 0.0,
         }
     }
 }
 
-/// Which map cell each screen column's wall belongs to, for picking what
-/// the mouse points at (the original records the cell under the cursor
-/// while drawing).
+/// Which map cell each screen column's nearest full wall belongs to, for
+/// picking what the mouse points at (the original records the cell under
+/// the cursor while drawing).
 #[derive(Debug, Clone)]
 pub struct Picking {
     columns: Vec<Option<(usize, usize, i32, i32)>>,
@@ -154,12 +169,20 @@ pub struct Camera {
     pub angle: u16,
     /// Strength of the player's own light.
     pub light: u16,
+    /// Eye height above the floor: the player's height (60 standing).
+    pub height: f64,
 }
 
 impl Camera {
     pub fn of(game: &Game) -> Camera {
         let (x, z) = game.camera();
-        Camera { x: x as f64, z: z as f64, angle: game.player.angle, light: game.player.light }
+        Camera {
+            x: x as f64,
+            z: z as f64,
+            angle: game.player.angle,
+            light: game.player.light,
+            height: game.player.y as f64,
+        }
     }
 
     pub fn lighting(&self, level: &Level, p: &ViewParams) -> Lighting {
@@ -178,46 +201,332 @@ const BAYER: [[f64; 4]; 4] = [
     [15.0 / 16.0, 7.0 / 16.0, 13.0 / 16.0, 5.0 / 16.0],
 ];
 
-/// Shade colour `c`: with the original's lighting by the light level at
-/// world point (wx, wz), otherwise (calibration mode) by distance.
-#[allow(clippy::too_many_arguments)]
-fn shade(lgt: Option<&LightTables>, lit: Option<&Lighting>, c: u8, dist: f64, wx: f64, wz: f64, p: &ViewParams, x: usize, y: usize) -> u8 {
-    let Some(l) = lgt else { return c };
-    let t = match lit {
-        Some(lit) => lit.level_at(wx as i32, wz as i32) as usize,
-        None => {
-            let level = ((dist - p.shade_start) / p.shade_step).max(0.0);
-            (level + (BAYER[y & 3][x & 3] - 0.5) * p.dither).floor().max(0.0) as usize
-        }
-    };
-    if t >= LGT_TABLES { p.dark_colour } else { l.tables[t][c as usize] }
+/// Camera depth of every view pixel (`f32::INFINITY` where nothing was
+/// drawn), for sprites and tools.
+pub type DepthBuffer = Vec<f32>;
+
+/// One column being drawn.
+struct Column<'a> {
+    screen: &'a mut Screen,
+    zbuf: &'a mut [f32],
+    level: &'a Level,
+    tex: &'a Textures,
+    lgt: Option<&'a LightTables>,
+    lit: Option<&'a Lighting>,
+    p: &'a ViewParams,
+    cam: &'a Camera,
+    eye: f64,
+    col: usize,
+    /// Ray direction with forward component 1, in world units per unit of
+    /// depth.
+    dx: f64,
+    dz: f64,
 }
 
-/// A MAP1 cell that stops a ray as a full-height wall: its 0-based texture.
-fn wall_texture(v: u16) -> Option<usize> {
-    let slot = |lo: u8| ((lo & 0x3F) as usize).checked_sub(1);
-    match Cell::decode(v) {
-        Cell::Wall { lo } => slot(lo),
-        // A door is drawn closed until it starts opening, then not at all
-        // (the original's swing / slide / raise animations are not drawn
-        // yet; see docs/rendering.md).
-        Cell::Door { lo, open } => if open & 0x0E == 0 { slot(lo) } else { None },
-        // See-through walls are drawn as plain walls for now.
-        Cell::SeeThrough { lo, .. } => slot(lo),
-        _ => None,
+impl Column<'_> {
+    fn shade(&self, c: u8, depth: f64, wx: f64, wz: f64, y: usize) -> u8 {
+        let Some(l) = self.lgt else { return c };
+        let t = match self.lit {
+            Some(lit) => lit.level_at(wx as i32, wz as i32) as usize,
+            None => {
+                let level = ((depth - self.p.shade_start) / self.p.shade_step).max(0.0);
+                (level + (BAYER[y & 3][self.col & 3] - 0.5) * self.p.dither).floor().max(0.0) as usize
+            }
+        };
+        if t >= LGT_TABLES { self.p.dark_colour } else { l.tables[t][c as usize] }
+    }
+
+    /// Write a pixel if it is nearer than what is there.
+    fn put(&mut self, y: usize, depth: f64, c: u8) {
+        let i = y * SCREEN_W + self.col;
+        if (depth as f32) < self.zbuf[i] {
+            self.zbuf[i] = depth as f32;
+            self.screen[i] = c;
+        }
+    }
+
+    fn world(&self, depth: f64) -> (f64, f64) {
+        (self.cam.x + self.dx * depth, self.cam.z + self.dz * depth)
+    }
+
+    /// Screen row of height h above the floor at camera depth `depth`.
+    fn row_of(&self, h: f64, depth: f64) -> f64 {
+        self.p.cy - (h - self.eye) * self.p.focal_y / (depth + self.p.depth_bias)
+    }
+
+    /// Floor and ceiling under / over the whole column.
+    fn floor_and_ceiling(&mut self) {
+        let ceiling = self.level.ceiling as f64;
+        let ctex = self.tex.ceiling.and_then(|i| self.tex.get(i));
+        for y in 0..VIEW_H {
+            let yf = y as f64;
+            if yf > self.p.cy && self.eye > 0.0 {
+                let depth = self.eye * self.p.focal_y / (yf - self.p.cy) - self.p.depth_bias;
+                let (wx, wz) = self.world(depth);
+                let (cx, cz) = ((wx / CELL).floor() as i32, (wz / CELL).floor() as i32);
+                if (0..DIM as i32).contains(&cx) && (0..DIM as i32).contains(&cz) {
+                    let t = (self.level.flor[cz as usize * DIM + cx as usize] >> 8) as usize;
+                    if let Some(tx) = self.tex.get(t) {
+                        let c = self.shade(tx[floor_texel(wx, wz, self.p)], depth, wx, wz, y);
+                        self.put(y, depth, c);
+                    }
+                }
+            } else if yf < self.p.cy
+                && ceiling > self.eye
+                && let Some(tx) = ctex
+            {
+                let depth = (ceiling - self.eye) * self.p.focal_y / (self.p.cy - yf) - self.p.depth_bias;
+                let (wx, wz) = self.world(depth);
+                let c = self.shade(tx[floor_texel(wx, wz, self.p)], depth, wx, wz, y);
+                self.put(y, depth, c);
+            }
+        }
+    }
+
+    /// A vertical textured face at camera depth `depth` between heights
+    /// `bottom` and `top`; u in 0..1 across the face. Colour 0 is
+    /// transparent when `masked`. Returns the screen rows covered.
+    #[allow(clippy::too_many_arguments)]
+    fn face(&mut self, slot: usize, depth: f64, u: f64, bottom: f64, top: f64, masked: bool) -> (i32, i32) {
+        let ceiling = self.level.ceiling as f64;
+        let y0 = self.row_of(top, depth).ceil().max(0.0) as i32;
+        let y1 = self.row_of(bottom, depth).floor().min(VIEW_H as f64 - 1.0) as i32;
+        let Some(tx) = self.tex.get(slot) else { return (y0, y1) };
+        let (wx, wz) = self.world(depth);
+        let mut u = u;
+        if self.p.wall_flip {
+            u = 1.0 - u;
+        }
+        let tu = ((u * 64.0) as usize).min(63);
+        for y in y0.max(0)..=y1 {
+            let h = self.eye - (y as f64 - self.p.cy) * (depth + self.p.depth_bias) / self.p.focal_y;
+            let v = if self.p.wall_tile > 0.0 { (h / self.p.wall_tile).rem_euclid(1.0) } else { h / ceiling };
+            let tv = 63 - ((v * 64.0) as i32).clamp(0, 63) as usize;
+            let texel = tx[tv * 64 + tu];
+            if masked && texel == 0 {
+                continue;
+            }
+            let c = self.shade(texel, depth, wx, wz, y as usize);
+            self.put(y as usize, depth, c);
+        }
+        (y0, y1)
+    }
+
+    /// A horizontal surface at height h seen between camera depths d0 and
+    /// d1 (a platform's top or bottom).
+    fn plane(&mut self, slot: usize, h: f64, d0: f64, d1: f64) {
+        let Some(tx) = self.tex.get(slot) else { return };
+        let (ya, yb) = (self.row_of(h, d0), self.row_of(h, d1));
+        let (lo, hi) = if ya < yb { (ya, yb) } else { (yb, ya) };
+        let (lo, hi) = (lo.floor().max(0.0) as usize, (hi.ceil() as i64).clamp(0, VIEW_H as i64 - 1) as usize);
+        for y in lo..=hi {
+            let dy = y as f64 - self.p.cy;
+            if dy == 0.0 {
+                continue;
+            }
+            let depth = (self.eye - h) * self.p.focal_y / dy - self.p.depth_bias;
+            if depth < d0 || depth > d1 || depth <= 0.0 {
+                continue;
+            }
+            let (wx, wz) = self.world(depth);
+            let c = self.shade(tx[floor_texel(wx, wz, self.p)], depth, wx, wz, y);
+            self.put(y, depth, c);
+        }
     }
 }
 
-/// Draw the 3D view into rows 0..VIEW_H of `screen`.
-pub fn render(
+fn slot_index(slot: Option<usize>) -> Option<usize> {
+    slot.and_then(|s| s.checked_sub(1))
+}
+
+/// Draw the 3D view into rows 0..VIEW_H of `screen`; returns the depth of
+/// every view pixel. `picking`, if given, records the full wall each
+/// column shows.
+#[allow(clippy::too_many_arguments)]
+pub fn render_view(
     screen: &mut Screen,
+    mut picking: Option<&mut Picking>,
     level: &Level,
     tex: &Textures,
     lgt: Option<&LightTables>,
     cam: &Camera,
     p: &ViewParams,
-) {
-    render_with_depth(screen, None, None, level, tex, lgt, cam, p);
+) -> DepthBuffer {
+    let a = (cam.angle & 511) as f64 * std::f64::consts::TAU / 512.0;
+    let (fx, fz) = (a.sin(), a.cos()); // forward
+    let (rx, rz) = (a.cos(), -a.sin()); // right: a quarter turn further
+    let mut zbuf = vec![f32::INFINITY; SCREEN_W * VIEW_H];
+    let lighting = p.lights.then(|| cam.lighting(level, p));
+    let eye = cam.height + (p.eye - 60.0);
+    let ceiling = level.ceiling as f64;
+
+    for col in 0..SCREEN_W {
+        let k = (col as f64 - p.cx) / p.focal_x;
+        let (dx, dz) = (fx + rx * k, fz + rz * k);
+        let mut c = Column {
+            screen: &mut *screen,
+            zbuf: &mut zbuf,
+            level,
+            tex,
+            lgt,
+            lit: lighting.as_ref(),
+            p,
+            cam,
+            eye,
+            col,
+            dx,
+            dz,
+        };
+        c.floor_and_ceiling();
+
+        // DDA over cells in cell units; t = distance along (dx, dz) in cells,
+        // which is the camera depth in cells.
+        let (px, pz) = (cam.x / CELL, cam.z / CELL);
+        let (mut mx, mut mz) = (px.floor() as i32, pz.floor() as i32);
+        let (stepx, stepz) = (if dx < 0.0 { -1 } else { 1 }, if dz < 0.0 { -1 } else { 1 });
+        let ddx = if dx != 0.0 { (1.0 / dx).abs() } else { f64::INFINITY };
+        let ddz = if dz != 0.0 { (1.0 / dz).abs() } else { f64::INFINITY };
+        let mut sx = if dx < 0.0 { (px - mx as f64) * ddx } else { (mx as f64 + 1.0 - px) * ddx };
+        let mut sz = if dz < 0.0 { (pz - mz as f64) * ddz } else { (mz as f64 + 1.0 - pz) * ddz };
+        let mut t_enter = 0.0;
+        let mut side_x = true;
+        let mut first = true;
+        // Affine u: where along the edge A -> B (cell units) this column lies
+        // on screen, from the projections of A and B.
+        let affine_frac = |ax: f64, az: f64, bx: f64, bz: f64| -> Option<f64> {
+            let proj = |x: f64, z: f64| {
+                let (rx_, rz_) = (x * CELL - cam.x, z * CELL - cam.z);
+                let depth = rx_ * fx + rz_ * fz;
+                (depth > 1.0).then(|| p.cx + (rx_ * rx + rz_ * rz) * p.focal_x / depth)
+            };
+            let (sa, sb) = (proj(ax, az)?, proj(bx, bz)?);
+            ((sb - sa).abs() > 1e-6).then(|| ((col as f64 + 0.5 - sa) / (sb - sa)).clamp(0.0, 1.0))
+        };
+        for _ in 0..(level.view_radius as usize * 3).max(64) {
+            if !first {
+                if mx < 0 || mz < 0 || mx >= DIM as i32 || mz >= DIM as i32 {
+                    break;
+                }
+                let t_exit = sx.min(sz);
+                // Where the ray entered this cell, across the face.
+                let along = if side_x { pz + t_enter * dz } else { px + t_enter * dx };
+                let mut u = along - along.floor();
+                if p.affine {
+                    let a = if side_x {
+                        let xf = if dx > 0.0 { mx as f64 } else { mx as f64 + 1.0 };
+                        affine_frac(xf, mz as f64, xf, mz as f64 + 1.0)
+                    } else {
+                        let zf = if dz > 0.0 { mz as f64 } else { mz as f64 + 1.0 };
+                        affine_frac(mx as f64, zf, mx as f64 + 1.0, zf)
+                    };
+                    if let Some(a) = a {
+                        u = a;
+                    }
+                }
+                if (side_x && dx < 0.0) || (!side_x && dz > 0.0) {
+                    u = 1.0 - u;
+                }
+                let v = level.map1[mz as usize * DIM + mx as usize];
+                let (d0, d1) = (t_enter * CELL, t_exit * CELL);
+                let stop = match Cell::decode(v) {
+                    Cell::Wall { lo } => solid(&mut c, &mut picking, lo, d0, u, (mx, mz)),
+                    Cell::Door { lo, open } if open & 0x0E == 0 => solid(&mut c, &mut picking, lo, d0, u, (mx, mz)),
+                    Cell::SeeThrough { lo, .. } => {
+                        if let Some(s) = slot_index(Some((lo & 0x3F) as usize)) {
+                            c.face(s, d0, u, 0.0, ceiling, true);
+                        }
+                        false
+                    }
+                    Cell::Diagonal { lo, flipped } => {
+                        let flipped = flipped != p.diag_swap;
+                        // The wall runs corner to corner: x - z = const, or
+                        // x + z = const for the other diagonal.
+                        let (cx0, cz0) = (mx as f64, mz as f64);
+                        let (k, denom, origin) = if flipped {
+                            (cx0 + cz0 + 1.0, dx + dz, px + pz)
+                        } else {
+                            (cx0 - cz0, dx - dz, px - pz)
+                        };
+                        let t = if denom != 0.0 { (k - origin) / denom } else { f64::NAN };
+                        if t >= t_enter && t <= t_exit {
+                            let mut hx = px + t * dx - cx0;
+                            if p.affine {
+                                let a = if flipped {
+                                    affine_frac(cx0, cz0 + 1.0, cx0 + 1.0, cz0)
+                                } else {
+                                    affine_frac(cx0, cz0, cx0 + 1.0, cz0 + 1.0)
+                                };
+                                if let Some(a) = a {
+                                    hx = a;
+                                }
+                            }
+                            if p.diag_u_flip {
+                                hx = 1.0 - hx;
+                            }
+                            hx = (hx * p.diag_scale + p.diag_offset).rem_euclid(1.0);
+                            let s = slot_index(Some((lo & 0x3F) as usize));
+                            if let Some(s) = s {
+                                c.face(s, t * CELL, hx.clamp(0.0, 1.0), 0.0, ceiling, false);
+                            }
+                            true
+                        } else {
+                            false
+                        }
+                    }
+                    Cell::Platform { lo, .. } => {
+                        let (bottom, top) = level.box_heights(v);
+                        let (bottom, top) = (bottom as f64, top as f64);
+                        let side = slot_index(level.box_side_slots[(lo & 0x0F) as usize]);
+                        let cap = slot_index(level.box_cap_slots[(lo >> 4) as usize]);
+                        if let Some(s) = side {
+                            c.face(s, d0, u, bottom, top, false);
+                        }
+                        if let Some(s) = cap {
+                            if eye > top {
+                                c.plane(s, top, d0, d1);
+                            } else if eye < bottom {
+                                c.plane(s, bottom, d0, d1);
+                            }
+                        }
+                        false
+                    }
+                    _ => false,
+                };
+                if stop {
+                    break;
+                }
+            }
+            first = false;
+            t_enter = sx.min(sz);
+            side_x = sx < sz;
+            if side_x {
+                sx += ddx;
+                mx += stepx;
+            } else {
+                sz += ddz;
+                mz += stepz;
+            }
+        }
+    }
+    zbuf
+}
+
+/// A full-height wall face; ends the ray. Records the cell for picking.
+fn solid(c: &mut Column, picking: &mut Option<&mut Picking>, lo: u8, depth: f64, u: f64, cell: (i32, i32)) -> bool {
+    let ceiling = c.level.ceiling as f64;
+    let (y0, y1) = match slot_index(Some((lo & 0x3F) as usize)) {
+        Some(s) => c.face(s, depth, u, 0.0, ceiling, false),
+        None => (0, -1),
+    };
+    if let Some(pk) = picking.as_deref_mut() {
+        pk.columns[c.col] = Some((cell.0 as usize, cell.1 as usize, y0, y1));
+    }
+    true
+}
+
+/// Draw the 3D view (walls, floor, ceiling) into rows 0..VIEW_H.
+pub fn render(screen: &mut Screen, level: &Level, tex: &Textures, lgt: Option<&LightTables>, cam: &Camera, p: &ViewParams) {
+    render_view(screen, None, level, tex, lgt, cam, p);
 }
 
 /// Everything a classic frame is drawn from.
@@ -233,153 +542,13 @@ pub struct Scene<'a> {
 }
 
 /// Draw walls, floor, ceiling and sprites; optionally record what each
-/// column shows for mouse picking.
-pub fn draw_scene(screen: &mut Screen, scene: &Scene, picking: Option<&mut Picking>) {
-    let wall_depth = render_with_depth(
-        screen,
-        None,
-        picking,
-        scene.level,
-        scene.textures,
-        scene.lights,
-        &scene.camera,
-        scene.params,
-    );
+/// column shows for mouse picking. Returns the depth buffer.
+pub fn draw_scene(screen: &mut Screen, scene: &Scene, picking: Option<&mut Picking>) -> DepthBuffer {
+    let zbuf = render_view(screen, picking, scene.level, scene.textures, scene.lights, &scene.camera, scene.params);
     if let Some(s) = scene.sprites {
-        crate::sprites::draw(screen, &wall_depth, scene.level, s, scene.lights, &scene.camera, scene.params, scene.counter);
+        crate::sprites::draw(screen, &zbuf, scene.level, s, scene.lights, &scene.camera, scene.params, scene.counter);
     }
-}
-
-/// As [`render`], also recording which cell each column shows.
-pub fn render_picking(
-    screen: &mut Screen,
-    picking: &mut Picking,
-    level: &Level,
-    tex: &Textures,
-    lgt: Option<&LightTables>,
-    cam: &Camera,
-    p: &ViewParams,
-) {
-    render_with_depth(screen, None, Some(picking), level, tex, lgt, cam, p);
-}
-
-/// As [`render`], also writing each view pixel's camera depth (for tools
-/// that calibrate the renderer; 0 where nothing was drawn).
-#[allow(clippy::too_many_arguments)]
-pub fn render_with_depth(
-    screen: &mut Screen,
-    mut depth_out: Option<&mut [f32]>,
-    mut picking: Option<&mut Picking>,
-    level: &Level,
-    tex: &Textures,
-    lgt: Option<&LightTables>,
-    cam: &Camera,
-    p: &ViewParams,
-) -> Vec<f64> {
-    let a = (cam.angle & 511) as f64 * std::f64::consts::TAU / 512.0;
-    let (fx, fz) = (a.sin(), a.cos()); // forward
-    let (rx, rz) = (a.cos(), -a.sin()); // right: a quarter turn further
-    let ceiling = level.ceiling as f64;
-    let mut wall_depth = vec![f64::INFINITY; SCREEN_W];
-    let lighting = p.lights.then(|| cam.lighting(level, p));
-    let lit = lighting.as_ref();
-    let ctex = tex.ceiling.and_then(|i| tex.get(i));
-
-    for col in 0..SCREEN_W {
-        let k = (col as f64 - p.cx) / p.focal_x;
-        let (dx, dz) = (fx + rx * k, fz + rz * k); // forward component 1
-        let (px, pz) = (cam.x / CELL, cam.z / CELL);
-        let (mut mx, mut mz) = (px.floor() as i32, pz.floor() as i32);
-        let (stepx, stepz) = (if dx < 0.0 { -1 } else { 1 }, if dz < 0.0 { -1 } else { 1 });
-        let ddx = if dx != 0.0 { (1.0 / dx).abs() } else { f64::INFINITY };
-        let ddz = if dz != 0.0 { (1.0 / dz).abs() } else { f64::INFINITY };
-        let mut sx = if dx < 0.0 { (px - mx as f64) * ddx } else { (mx as f64 + 1.0 - px) * ddx };
-        let mut sz = if dz < 0.0 { (pz - mz as f64) * ddz } else { (mz as f64 + 1.0 - pz) * ddz };
-        let mut hit: Option<(usize, f64, f64)> = None; // texture, depth, u
-        let mut hit_cell = None;
-        for _ in 0..256 {
-            let side_x = sx < sz;
-            if side_x {
-                sx += ddx;
-                mx += stepx;
-            } else {
-                sz += ddz;
-                mz += stepz;
-            }
-            if mx < 0 || mz < 0 || mx >= DIM as i32 || mz >= DIM as i32 {
-                break;
-            }
-            if let Some(t) = wall_texture(level.map1[mz as usize * DIM + mx as usize]) {
-                let dist = if side_x { sx - ddx } else { sz - ddz };
-                let mut u = if side_x { pz + dist * dz } else { px + dist * dx };
-                u -= u.floor();
-                if (side_x && dx < 0.0) || (!side_x && dz > 0.0) {
-                    u = 1.0 - u;
-                }
-                if p.wall_flip {
-                    u = 1.0 - u;
-                }
-                hit = Some((t, dist * CELL, u));
-                hit_cell = Some((mx as usize, mz as usize));
-                break;
-            }
-        }
-
-        let (top, bottom) = match hit {
-            Some((_, depth, _)) => {
-                let d = depth + p.depth_bias;
-                ((p.cy - (ceiling - p.eye) * p.focal_y / d).ceil() as i32, (p.cy + p.eye * p.focal_y / d).floor() as i32)
-            }
-            None => (p.cy as i32, p.cy as i32 - 1),
-        };
-        if let Some(pk) = picking.as_deref_mut() {
-            pk.columns[col] = hit_cell.map(|(c, r)| (c, r, top, bottom));
-        }
-        if let Some((_, depth, _)) = hit {
-            wall_depth[col] = depth;
-        }
-        for y in 0..VIEW_H {
-            let yi = y as i32;
-            let yf = y as f64;
-            let mut px_depth = 0.0;
-            let c = if let (Some((t, depth, u)), true) = (hit, yi >= top && yi <= bottom) {
-                px_depth = depth;
-                let d = depth + p.depth_bias;
-                // Height above the floor of this pixel's point on the wall.
-                let h = p.eye - (yf - p.cy) * d / p.focal_y;
-                let v = if p.wall_tile > 0.0 { (h / p.wall_tile).rem_euclid(1.0) } else { h / ceiling };
-                let tu = ((u * 64.0) as usize).min(63);
-                let tv = 63 - ((v * 64.0) as i32).clamp(0, 63) as usize;
-                let (wx, wz) = (cam.x + dx * depth, cam.z + dz * depth);
-                tex.get(t).map_or(0, |tx| shade(lgt, lit, tx[tv * 64 + tu], depth, wx, wz, p, col, y))
-            } else if yf > p.cy {
-                let d = p.eye * p.focal_y / (yf - p.cy);
-                let depth = d - p.depth_bias;
-                px_depth = depth;
-                let (wx, wz) = (cam.x + dx * depth, cam.z + dz * depth);
-                let (cx, cz) = ((wx / CELL).floor() as i32, (wz / CELL).floor() as i32);
-                if (0..DIM as i32).contains(&cx) && (0..DIM as i32).contains(&cz) {
-                    let t = (level.flor[cz as usize * DIM + cx as usize] >> 8) as usize;
-                    tex.get(t).map_or(0, |tx| shade(lgt, lit, tx[floor_texel(wx, wz, p)], depth, wx, wz, p, col, y))
-                } else {
-                    0
-                }
-            } else if let Some(tx) = ctex.filter(|_| yf < p.cy) {
-                let d = (ceiling - p.eye) * p.focal_y / (p.cy - yf);
-                let depth = d - p.depth_bias;
-                px_depth = depth;
-                let (wx, wz) = (cam.x + dx * depth, cam.z + dz * depth);
-                shade(lgt, lit, tx[floor_texel(wx, wz, p)], depth, wx, wz, p, col, y)
-            } else {
-                0
-            };
-            screen[y * SCREEN_W + col] = c;
-            if let Some(d) = depth_out.as_deref_mut() {
-                d[y * SCREEN_W + col] = px_depth as f32;
-            }
-        }
-    }
-    wall_depth
+    zbuf
 }
 
 fn floor_texel(wx: f64, wz: f64, p: &ViewParams) -> usize {

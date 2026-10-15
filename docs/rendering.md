@@ -23,6 +23,31 @@ Walls are textured with u running against the ray's crossing direction (the
 port's `wall_flip`); floors and ceilings take u from z and v from x
 (`floor_swap`), 64 texels per 128-unit cell. (F)
 
+## Walls, platforms, diagonals
+
+The port casts one ray per column and draws everything it meets into a
+per-pixel depth buffer, floor and ceiling first, so nearer surfaces and
+sprites hide farther ones:
+
+- full walls and closed doors end the ray;
+- raised platforms (bit 15 clear, low byte != high byte) draw their entry
+  face between the platform's bottom and top (heights from the level's
+  scaled tables, `movement.md`) with the `*BOXSIDE` texture of the low
+  nibble, and their top (or bottom, seen from below) with the `*BOXCAP`
+  texture of bits 4-7; the ray continues;
+- diagonal walls (type D) run corner to corner, `x - z` constant, or
+  `x + z` constant when bit 0x0100 is set, textured once across the
+  diagonal; the ray ends there if it meets the diagonal inside the cell;
+- see-through walls (type 9) are drawn with colour 0 transparent and the
+  ray continues;
+- the eye is at the player's height (60 standing, higher on a platform).
+
+Checked against captured frames: four views of platforms in two dungeons
+and a diagonal wall match in shape and textures (F). Perspective-correct
+texture mapping scores better than affine mapping, and the diagonal's
+texture fits best stretched corner to corner (other scales and offsets
+were tried).
+
 ## Lighting
 
 Every shaded point gets a light level 0 (full) .. 13 (dark): the brightest
@@ -75,9 +100,10 @@ With the defaults above:
 
 ## Open
 
-- Creatures, translucent sprites (`F:` 0x10), doors drawn open or at their offsets, edge
-  and diagonal walls, raised platforms, the upper storey (MAP2) and the sky
-  of exteriors are not drawn yet.
+- Creatures, translucent sprites (`F:` 0x10), door animations, edge walls
+  (type A), the texture v offset of platform sides (table DGROUP:CC74), the
+  upper storey (MAP2), chasm walls and the sky of exteriors are not drawn
+  yet.
 - The per-light flag table DGROUP:C997 (a light can be dimmed by 13 levels
   for a sprite) and the second light list DGROUP:BBCC (count BC8C), likely
   moving lights such as spells.

@@ -377,3 +377,8 @@
   1000:081a; active within 2048 at 5/8 strength, 1000:e12e); level = 0 inside s/2, +1 per (s/2)/13
   (1000:b777). Matches captured frames visually (the lit hall near the torches); identical-pixel scores stay
   at the texel-sampling limit.
+- 2026-10-15: renderer rework: per-pixel depth buffer, every surface along a ray drawn (raised platforms with
+  their BOXSIDE / BOXCAP textures and heights, diagonal walls, see-through walls), eye at the player's height;
+  sprites depth-tested per pixel. Checked on four platform views in two dungeons and a diagonal wall captured
+  from the original (shapes and textures match; perspective-correct mapping and corner-to-corner diagonal
+  textures fit best). Captures from test slot 9 work like slot 2.

@@ -101,7 +101,7 @@ impl Session {
             params: &self.params,
             counter: self.game.frame,
         };
-        draw_scene(&mut self.screen, &scene, Some(&mut self.picking));
+        let _depth = draw_scene(&mut self.screen, &scene, Some(&mut self.picking));
         self.screen[VIEW_H * SCREEN_W..].copy_from_slice(&self.interface);
         &self.screen
     }

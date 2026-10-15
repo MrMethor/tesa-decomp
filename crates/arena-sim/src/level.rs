@@ -83,6 +83,10 @@ pub struct Level {
     pub leveldown_slot: Option<usize>,
     /// Wall texture slots of `*MENU n` (walls that lead elsewhere).
     pub menu_slots: [Option<usize>; 16],
+    /// Texture slots of `*BOXSIDE n` / `*BOXCAP n` (raised platforms' sides
+    /// and tops, DGROUP:CB49 / CB39).
+    pub box_side_slots: [Option<usize>; 16],
+    pub box_cap_slots: [Option<usize>; 16],
     /// Levels of the location (DGROUP:C355).
     pub level_count: u8,
     /// Wall height: `*CEILING h` (100 if absent or <= 32).
@@ -132,6 +136,27 @@ fn read_flats(inf: &Inf) -> Vec<Flat> {
 
 fn four(save: &SaveGame, off: usize) -> [u8; 4] {
     [save.state[off], save.state[off + 1], save.state[off + 2], save.state[off + 3]]
+}
+
+/// `*KEY n` directives: slot of the texture that follows, by n (0..16).
+fn indexed_slots(inf: &Inf, key: &str) -> [Option<usize>; 16] {
+    let mut out = [None; 16];
+    let mut counter = 1;
+    for e in &inf.entries {
+        if e.section != Section::Walls && e.section != Section::Floors {
+            continue;
+        }
+        match e.kind {
+            Kind::File => counter += e.set_count.max(1),
+            Kind::Directive if e.name == key => {
+                if let Some(&n) = e.args.first().filter(|&&n| (0..16).contains(&n)) {
+                    out[n as usize] = Some(counter);
+                }
+            }
+            _ => {}
+        }
+    }
+    out
 }
 
 /// The saved light list.
@@ -185,6 +210,8 @@ impl Level {
             levelup_slot: None,
             leveldown_slot: None,
             menu_slots: [None; 16],
+            box_side_slots: [None; 16],
+            box_cap_slots: [None; 16],
             level_count: save.state[sg::LEVEL_COUNT],
             ceiling: 100,
             open_sky: false,
@@ -216,23 +243,11 @@ impl Level {
         self.read_ceiling(inf);
         self.levelup_slot = inf.directive_slot("LEVELUP");
         self.leveldown_slot = inf.directive_slot("LEVELDOWN");
-        self.menu_slots = [None; 16];
-        // *MENU n stores the slot of the next texture in DGROUP:C917[n].
-        let mut counter = 1;
-        for e in &inf.entries {
-            if e.section != Section::Walls && e.section != Section::Floors {
-                continue;
-            }
-            match e.kind {
-                Kind::File => counter += e.set_count.max(1),
-                Kind::Directive if e.name == "MENU" => {
-                    if let Some(&n) = e.args.first().filter(|&&n| (0..16).contains(&n)) {
-                        self.menu_slots[n as usize] = Some(counter);
-                    }
-                }
-                _ => {}
-            }
-        }
+        // *MENU n, *BOXSIDE n, *BOXCAP n store the slot of the next texture
+        // in their 16-entry tables (DGROUP:C917, CB49, CB39).
+        self.menu_slots = indexed_slots(inf, "MENU");
+        self.box_side_slots = indexed_slots(inf, "BOXSIDE");
+        self.box_cap_slots = indexed_slots(inf, "BOXCAP");
     }
 
     /// Level `index` of the location, as the level loader 1000:e930 builds
