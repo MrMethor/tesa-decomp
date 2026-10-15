@@ -62,6 +62,7 @@ DIAG_FIELDS = [
     ("speed", 0xCCBE, "<H"),      # walk speed used this frame
     ("mx", 0x8F92, "<h"),         # mouse cursor
     ("my", 0x8F94, "<h"),
+    ("rng", 0x91F6, "<I"),        # random generator state (1000:6e10)
 ]
 # Load screen: rows of 14 pixels from y = 4 (35fd:07c3-07fa).
 SLOT_ROW_Y = lambda slot: 4 + 14 * slot + 7  # noqa: E731
@@ -212,21 +213,16 @@ def expected_bytes(addr, n):
     return b[o:o + n]
 
 
-def main():
-    args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    keep = "--keep" in sys.argv
-    if len(args) != 2:
-        print(__doc__)
-        return 2
-    scn = scenario.load(args[0])
-    out_path = os.path.abspath(args[1])
-    conf = make_conf(autotype=AUTOTYPE_TO_LOAD)
+ATTEMPTS = 3
+
+
+def play(conf, scn, scn_path, out_path, keep):
     with DosboxX(conf, GAME_DIR) as d:
         o = Oracle(d)
         o.load_slot(scn.slot)
         managed = scenario.all_scancodes(scn)
         with open(out_path, "w") as out:
-            out.write("# oracle: original game, scenario %s\n" % os.path.basename(args[0]))
+            out.write("# oracle: original game, scenario %s\n" % os.path.basename(scn_path))
             frame0 = o.state()["frame"]
             for ev in scenario.frames(scn):
                 st = o.state()
@@ -245,6 +241,28 @@ def main():
             o.set_keys(set(), managed)
             o.run()
             input("DOSBox-X left running; press Enter to close it ")
+
+
+def main():
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    keep = "--keep" in sys.argv
+    if len(args) != 2:
+        print(__doc__)
+        return 2
+    scn = scenario.load(args[0])
+    out_path = os.path.abspath(args[1])
+    conf = make_conf(autotype=AUTOTYPE_TO_LOAD)
+    # DOSBox-X's control connection occasionally stops answering (a timeout
+    # in the first seconds of a run); a fresh DOSBox-X then works, so a run
+    # is retried a few times before giving up.
+    for attempt in range(1, ATTEMPTS + 1):
+        try:
+            play(conf, scn, args[0], out_path, keep)
+            break
+        except DosboxError as e:
+            if attempt == ATTEMPTS:
+                raise
+            print("attempt %d failed (%s); retrying" % (attempt, e), file=sys.stderr)
     print("wrote", out_path)
     return 0
 

@@ -382,3 +382,7 @@
   sprites depth-tested per pixel. Checked on four platform views in two dungeons and a diagonal wall captured
   from the original (shapes and textures match; perspective-correct mapping and corner-to-corner diagonal
   textures fit best). Captures from test slot 9 work like slot 2.
+- 2026-10-15: random generator (`docs/random.md`): 32-bit state DGROUP:91F6, step state * 0x006D002D, caller
+  gets the high word (1000:6e10, confirmed on the running game); several routines reseed it from fixed values
+  around deterministic jobs. The harness records it (`d_rng`) and now retries a run when DOSBox-X's control
+  connection stops answering (`tools/oracle.py`).
